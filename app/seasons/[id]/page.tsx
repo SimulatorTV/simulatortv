@@ -1,6 +1,6 @@
-"use client";
-
 // @ts-nocheck
+
+"use client";
 
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
@@ -9,7 +9,7 @@ import Navbar from "../../../components/Navbar";
 import EventScreen from "../../../components/survivor/EventScreen";
 import { supabase } from "../../../lib/supabase";
 
-function getPlayersFromEntry(entry) {
+function getPlayersFromEntry(entry: any) {
   if (!entry) return [];
 
   if (entry.tribes?.length) {
