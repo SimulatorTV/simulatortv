@@ -372,8 +372,14 @@ export default function BattleOfTheShowsSimulator() {
   const router = useRouter();
 
   const [sourceTeams, setSourceTeams] = useState([]);
+  const [availableCasts, setAvailableCasts] = useState([]);
   const [rosterPlayers, setRosterPlayers] = useState([]);
   const [selectedPlayerIds, setSelectedPlayerIds] = useState([]);
+  const [showAddCastModal, setShowAddCastModal] = useState(false);
+  const [modalCastId, setModalCastId] = useState("");
+  const [modalContestants, setModalContestants] = useState([]);
+  const [modalSelectedIds, setModalSelectedIds] = useState(() => new Set());
+  const [loadingModalContestants, setLoadingModalContestants] = useState(false);
   const [loadingTeams, setLoadingTeams] = useState(true);
   const [selectedTeams, setSelectedTeams] = useState([]);
   const [manualColors, setManualColors] = useState({});
@@ -461,33 +467,19 @@ export default function BattleOfTheShowsSimulator() {
       officialCasts = officialData || [];
     }
 
-    const allCasts = [...officialCasts, ...(userCasts || [])];
+    setAvailableCasts([...officialCasts, ...(userCasts || [])]);
+    setSourceTeams([]);
+    setRosterPlayers([]);
+    setSelectedPlayerIds([]);
+    setSelectedTeams([]);
+    setLoadingTeams(false);
+  }
 
-    if (allCasts.length === 0) {
-      setSourceTeams([]);
-      setSelectedTeams([]);
-      setLoadingTeams(false);
-      return;
-    }
-
-    const { data: contestants, error: contestantsError } = await supabase
-      .from("contestants")
-      .select("id, name, image_url, cast_id")
-      .in("cast_id", allCasts.map((cast) => cast.id))
-      .order("created_at", { ascending: true });
-
-    if (contestantsError) {
-      alert(contestantsError.message);
-      setLoadingTeams(false);
-      return;
-    }
-
-    const castById = new Map(allCasts.map((cast) => [cast.id, cast]));
+  function rebuildSourceTeamsFromRoster(nextRoster) {
     const grouped = new Map();
 
-    (contestants || []).forEach((person) => {
-      const cast = castById.get(person.cast_id);
-      const teamName = cast?.name || cast?.show_name || "Unknown Show";
+    nextRoster.forEach((player) => {
+      const teamName = player.sourceTeamName || "Unknown Show";
 
       if (!grouped.has(teamName)) {
         grouped.set(teamName, {
@@ -499,12 +491,12 @@ export default function BattleOfTheShowsSimulator() {
       }
 
       grouped.get(teamName).players.push({
-        id: `${person.cast_id}-${person.id}`,
-        name: person.name,
-        image: person.image_url || "",
+        id: player.id,
+        name: player.name,
+        image: player.image,
       });
 
-      if (cast?.name) grouped.get(teamName).castNames.add(cast.name);
+      if (player.sourceCastName) grouped.get(teamName).castNames.add(player.sourceCastName);
     });
 
     const teams = Array.from(grouped.values())
@@ -512,20 +504,78 @@ export default function BattleOfTheShowsSimulator() {
         ...team,
         castNames: Array.from(team.castNames),
       }))
-      .filter((team) => team.players.length > 0)
       .sort((a, b) => a.name.localeCompare(b.name));
 
     setSourceTeams(teams);
-    const allPlayers = teams.flatMap((team) =>
-      team.players.map((player) => ({
-        ...player,
-        sourceTeamName: team.name,
-      }))
-    );
-    setRosterPlayers(allPlayers);
-    setSelectedPlayerIds(allPlayers.map((player) => player.id));
     setSelectedTeams(teams.filter((team) => team.players.length >= teamSize).map((team) => team.name));
-    setLoadingTeams(false);
+  }
+
+  async function openAddCastModal() {
+    setShowAddCastModal(true);
+
+    if (!modalCastId && availableCasts.length > 0) {
+      await loadContestantsForModal(availableCasts[0].id);
+    }
+  }
+
+  async function loadContestantsForModal(castId) {
+    setModalCastId(castId);
+    setModalSelectedIds(new Set());
+    setLoadingModalContestants(true);
+
+    const { data, error } = await supabase
+      .from("contestants")
+      .select("id, name, image_url, cast_id")
+      .eq("cast_id", castId)
+      .order("created_at", { ascending: true });
+
+    if (error) {
+      alert(error.message);
+      setLoadingModalContestants(false);
+      return;
+    }
+
+    setModalContestants(data || []);
+    setLoadingModalContestants(false);
+  }
+
+  function addSelectedContestantsToRoster() {
+    const selectedPeople = modalContestants.filter((person) => modalSelectedIds.has(person.id));
+    if (selectedPeople.length === 0) return;
+
+    const selectedCast = availableCasts.find((cast) => cast.id === modalCastId);
+    const teamName = selectedCast?.name || selectedCast?.show_name || "Unknown Show";
+
+    const additions = selectedPeople.map((person) => ({
+      id: `${person.cast_id || modalCastId}-${person.id}`,
+      name: person.name,
+      image: person.image_url || "",
+      sourceTeamName: teamName,
+      sourceCastName: selectedCast?.name || teamName,
+    }));
+
+    setRosterPlayers((current) => {
+      const existingIds = new Set(current.map((player) => player.id));
+      const next = [...current, ...additions.filter((person) => !existingIds.has(person.id))];
+
+      setSelectedPlayerIds(next.map((player) => player.id));
+      rebuildSourceTeamsFromRoster(next);
+
+      return next;
+    });
+
+    setShowAddCastModal(false);
+    setModalSelectedIds(new Set());
+  }
+
+  function clearAddedCastMembers() {
+    const ok = confirm("Clear all added Battle of the Shows characters?");
+    if (!ok) return;
+
+    setRosterPlayers([]);
+    setSelectedPlayerIds([]);
+    setSourceTeams([]);
+    setSelectedTeams([]);
   }
 
   function selectAllTeams() {
@@ -1275,6 +1325,173 @@ export default function BattleOfTheShowsSimulator() {
             </CardContent>
           </Card>
         ) : null}
+
+        {showAddCastModal && (
+          <AddCastMembersModal
+            casts={availableCasts}
+            modalCastId={modalCastId}
+            modalContestants={modalContestants}
+            modalSelectedIds={modalSelectedIds}
+            loadingCasts={loadingTeams}
+            loadingContestants={loadingModalContestants}
+            onClose={() => setShowAddCastModal(false)}
+            onChooseCast={loadContestantsForModal}
+            onToggleContestant={(id) =>
+              setModalSelectedIds((prev) => {
+                const next = new Set(prev);
+                next.has(id) ? next.delete(id) : next.add(id);
+                return next;
+              })
+            }
+            onSelectAll={() => setModalSelectedIds(new Set(modalContestants.map((person) => person.id)))}
+            onSelectNone={() => setModalSelectedIds(new Set())}
+            onAddSelected={addSelectedContestantsToRoster}
+          />
+        )}
+      </div>
+    </div>
+  );
+}
+
+
+function AddCastMembersModal({
+  casts,
+  modalCastId,
+  modalContestants,
+  modalSelectedIds,
+  loadingCasts,
+  loadingContestants,
+  onClose,
+  onChooseCast,
+  onToggleContestant,
+  onSelectAll,
+  onSelectNone,
+  onAddSelected,
+}) {
+  const officialCasts = casts.filter((cast) => cast.is_official);
+  const customCasts = casts.filter((cast) => !cast.is_official);
+  const selectedCount = modalSelectedIds.size;
+
+  const firstCastId = casts[0]?.id || "";
+
+  useEffect(() => {
+    if (!modalCastId && firstCastId) {
+      onChooseCast(firstCastId);
+    }
+  }, [modalCastId, firstCastId]);
+
+  function CastButton({ cast }) {
+    return (
+      <button
+        key={cast.id}
+        onClick={() => onChooseCast(cast.id)}
+        className={`w-full text-left rounded-2xl px-4 py-3 font-black ${
+          modalCastId === cast.id
+            ? "bg-teal-600 text-white"
+            : "bg-zinc-900 hover:bg-zinc-800 text-white"
+        }`}
+      >
+        <div>{cast.name}</div>
+        <div className="text-xs opacity-70 font-bold">
+          {cast.show_name || (cast.is_official ? "Official Cast" : "Custom Cast")}
+        </div>
+      </button>
+    );
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-3">
+      <div className="w-full max-w-6xl max-h-[90vh] overflow-hidden rounded-3xl border border-zinc-700 bg-zinc-950 shadow-2xl flex flex-col">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-800 p-4">
+          <div>
+            <h2 className="text-3xl font-black text-white">Add Cast Members</h2>
+            <p className="text-zinc-400 text-sm">
+              Pick a show/cast, choose characters, and they will appear as that show’s team.
+            </p>
+          </div>
+
+          <button onClick={onClose} className="rounded-2xl bg-zinc-800 hover:bg-zinc-700 px-4 py-2 font-black text-white">
+            Close
+          </button>
+        </div>
+
+        <div className="grid md:grid-cols-[320px_1fr] min-h-0 flex-1 overflow-hidden">
+          <div className="border-r border-zinc-800 p-4 overflow-auto space-y-4">
+            {loadingCasts ? (
+              <div className="rounded-2xl bg-zinc-900 border border-zinc-700 p-4 text-zinc-300">Loading casts...</div>
+            ) : casts.length === 0 ? (
+              <div className="rounded-2xl bg-red-500/15 border border-red-300/40 p-4 text-red-100">No casts available yet.</div>
+            ) : (
+              <>
+                {officialCasts.length > 0 && (
+                  <div>
+                    <div className="text-zinc-400 text-xs font-black uppercase tracking-widest mb-2">Favorite Official Casts</div>
+                    <div className="space-y-2">
+                      {officialCasts.map((cast) => <CastButton key={cast.id} cast={cast} />)}
+                    </div>
+                  </div>
+                )}
+
+                {customCasts.length > 0 && (
+                  <div>
+                    <div className="text-zinc-400 text-xs font-black uppercase tracking-widest mb-2">Custom Casts</div>
+                    <div className="space-y-2">
+                      {customCasts.map((cast) => <CastButton key={cast.id} cast={cast} />)}
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+
+          <div className="p-4 overflow-auto">
+            <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+              <div>
+                <h3 className="text-2xl font-black text-white">Characters</h3>
+                <p className="text-zinc-400 text-sm">{selectedCount} selected</p>
+              </div>
+
+              <div className="flex flex-wrap gap-2">
+                <button onClick={onSelectAll} className="rounded-2xl bg-zinc-800 hover:bg-zinc-700 px-4 py-2 font-black text-white">Select All</button>
+                <button onClick={onSelectNone} className="rounded-2xl bg-zinc-800 hover:bg-zinc-700 px-4 py-2 font-black text-white">Select None</button>
+                <button onClick={onAddSelected} disabled={selectedCount === 0} className="rounded-2xl bg-teal-600 hover:bg-teal-500 disabled:opacity-40 px-4 py-2 font-black text-white">Add Selected</button>
+              </div>
+            </div>
+
+            {loadingContestants ? (
+              <div className="rounded-2xl bg-zinc-900 border border-zinc-700 p-6 text-zinc-300">Loading contestants...</div>
+            ) : modalContestants.length === 0 ? (
+              <div className="rounded-2xl bg-zinc-900 border border-zinc-700 p-6 text-zinc-300">No characters found for this cast.</div>
+            ) : (
+              <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-3">
+                {modalContestants.map((person) => {
+                  const active = modalSelectedIds.has(person.id);
+
+                  return (
+                    <button
+                      key={person.id}
+                      type="button"
+                      onClick={() => onToggleContestant(person.id)}
+                      className={`relative rounded-2xl overflow-hidden border aspect-square ${
+                        active ? "border-white ring-2 ring-white/60" : "border-zinc-700 opacity-45 grayscale"
+                      }`}
+                    >
+                      {person.image_url ? (
+                        <img src={person.image_url} className="h-full w-full object-cover" alt={person.name} />
+                      ) : (
+                        <div className="h-full w-full grid place-items-center text-zinc-400 text-xs font-black text-center p-1 bg-zinc-800">No Image</div>
+                      )}
+
+                      <div className="absolute bottom-0 left-0 right-0 bg-black/75 text-white text-center text-xs font-black py-1 truncate px-1">
+                        {person.name}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
       </div>
     </div>
   );
