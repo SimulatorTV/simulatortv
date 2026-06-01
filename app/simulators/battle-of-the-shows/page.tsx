@@ -372,6 +372,8 @@ export default function BattleOfTheShowsSimulator() {
   const router = useRouter();
 
   const [sourceTeams, setSourceTeams] = useState([]);
+  const [rosterPlayers, setRosterPlayers] = useState([]);
+  const [selectedPlayerIds, setSelectedPlayerIds] = useState([]);
   const [loadingTeams, setLoadingTeams] = useState(true);
   const [selectedTeams, setSelectedTeams] = useState([]);
   const [manualColors, setManualColors] = useState({});
@@ -485,7 +487,7 @@ export default function BattleOfTheShowsSimulator() {
 
     (contestants || []).forEach((person) => {
       const cast = castById.get(person.cast_id);
-      const teamName = cast?.show_name || cast?.name || "Unknown Show";
+      const teamName = cast?.name || cast?.show_name || "Unknown Show";
 
       if (!grouped.has(teamName)) {
         grouped.set(teamName, {
@@ -514,6 +516,14 @@ export default function BattleOfTheShowsSimulator() {
       .sort((a, b) => a.name.localeCompare(b.name));
 
     setSourceTeams(teams);
+    const allPlayers = teams.flatMap((team) =>
+      team.players.map((player) => ({
+        ...player,
+        sourceTeamName: team.name,
+      }))
+    );
+    setRosterPlayers(allPlayers);
+    setSelectedPlayerIds(allPlayers.map((player) => player.id));
     setSelectedTeams(teams.filter((team) => team.players.length >= teamSize).map((team) => team.name));
     setLoadingTeams(false);
   }
@@ -586,10 +596,38 @@ export default function BattleOfTheShowsSimulator() {
     ]);
   }
 
+  function togglePlayerSelection(playerId) {
+    setSelectedPlayerIds((current) =>
+      current.includes(playerId)
+        ? current.filter((id) => id !== playerId)
+        : [...current, playerId]
+    );
+  }
+
+  function selectAllPlayers() {
+    setSelectedPlayerIds(rosterPlayers.map((player) => player.id));
+  }
+
+  function selectNoPlayers() {
+    setSelectedPlayerIds([]);
+  }
+
+  function getPlayableSourceTeams() {
+    const selectedIdSet = new Set(selectedPlayerIds);
+
+    return sourceTeams
+      .map((team) => ({
+        ...team,
+        players: team.players.filter((player) => selectedIdSet.has(player.id)),
+      }))
+      .filter((team) => selectedTeams.includes(team.name) && team.players.length >= teamSize);
+  }
+
   function startSeason() {
     if (selectedTeams.length < 2) return;
 
-    const createdTeams = createTeams(selectedTeams, manualColors, inactiveColors, sourceTeams, teamSize);
+    const playableSourceTeams = getPlayableSourceTeams();
+    const createdTeams = createTeams(playableSourceTeams.map((team) => team.name), manualColors, inactiveColors, playableSourceTeams, teamSize);
 
     const nextSeason = {
       teams: createdTeams,
@@ -779,6 +817,7 @@ export default function BattleOfTheShowsSimulator() {
         data_json: {
           simulator_type: "battle-of-the-shows",
           teamSize,
+          selectedPlayerIds,
           startingTeams: seasonHistory[0]?.teams || [],
           history: seasonHistory,
           finalTeams: season.teams,
@@ -963,9 +1002,13 @@ export default function BattleOfTheShowsSimulator() {
                     onChange={(e) => {
                       const next = Math.max(1, Number(e.target.value) || 1);
                       setTeamSize(next);
-                      setSelectedTeams((current) =>
-                        current.filter((name) => sourceTeams.find((team) => team.name === name)?.players.length >= next)
-                      );
+                      setSelectedTeams((current) => {
+                        const selectedIdSet = new Set(selectedPlayerIds);
+                        return current.filter((name) => {
+                          const team = sourceTeams.find((item) => item.name === name);
+                          return team && team.players.filter((player) => selectedIdSet.has(player.id)).length >= next;
+                        });
+                      });
                     }}
                     className="w-full rounded-xl border border-zinc-700 bg-zinc-950 px-4 py-3 text-white"
                   />
@@ -1033,7 +1076,7 @@ export default function BattleOfTheShowsSimulator() {
                   </div>
                 </div>
 
-                <Button onClick={startSeason} disabled={selectedTeams.length < 2 || loadingTeams} className="w-full rounded-2xl py-6 text-lg font-bold">
+                <Button onClick={startSeason} disabled={getPlayableSourceTeams().length < 2 || loadingTeams} className="w-full rounded-2xl py-6 text-lg font-bold">
                   Start Simulator
                 </Button>
               </CardContent>
