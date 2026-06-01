@@ -63,6 +63,14 @@ export default function SimulatorsPage() {
           />
 
           <SimulatorCard
+  title="Battle of the Shows"
+  description="Shows battle as teams through challenges, call-outs, voting, matchups, and eliminations until one show remains."
+  href="/simulators/battle-of-the-shows"
+  buttonText="Open Battle of the Shows"
+  buttonClass="bg-teal-600 hover:bg-teal-500 text-white"
+/>
+
+          <SimulatorCard
             title="Trio"
             description="Teams of three battle through challenges and eliminations until one trio remains."
             href="/simulators/trio"
