@@ -912,7 +912,22 @@ export default function BattleOfTheShowsSimulator() {
                       : `Round ${season.round} • ${STAGE_LABELS[stage] || stage}`}
                   </div>
                 </div>
-                {stage !== "setup" ? (
+                {stage === "setup" ? (
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      onClick={openAddCastModal}
+                      className="rounded-2xl bg-teal-600 px-6 py-4 font-black text-white hover:bg-teal-500"
+                    >
+                      Add Cast Members
+                    </Button>
+                    <Link
+                      href="/custom-casts"
+                      className="rounded-2xl border border-zinc-700 bg-transparent px-6 py-4 font-black text-white hover:bg-white/10"
+                    >
+                      Manage Casts
+                    </Link>
+                  </div>
+                ) : (
                   <div className="flex gap-2">
                     <Button onClick={advance} className="rounded-2xl px-6 py-6 font-bold">
                       Advance
@@ -921,7 +936,7 @@ export default function BattleOfTheShowsSimulator() {
                       Main Menu
                     </Button>
                   </div>
-                ) : null}
+                )}
               </div>
             </CardContent>
           </Card>
@@ -939,12 +954,21 @@ export default function BattleOfTheShowsSimulator() {
           <div className="grid gap-4 lg:grid-cols-[1.15fr_0.85fr]">
             <Card className="border border-zinc-800 bg-zinc-950/90 text-white">
               <CardHeader>
-                <CardTitle>Select Shows</CardTitle>
+                <CardTitle>Added Show Teams</CardTitle>
               </CardHeader>
               <CardContent>
                 {sourceTeams.length === 0 ? (
-                  <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-6 text-zinc-400">
-                    No casts found. Add/favorite casts first, and make sure they have a show name.
+                  <div className="rounded-2xl border border-dashed border-zinc-700 bg-zinc-900 p-6 text-center text-zinc-400">
+                    <div className="mb-3 text-2xl font-black text-white">No teams added yet.</div>
+                    <div className="mb-5">
+                      Click below to add characters from a show. Once you add Family Guy characters, Team Family Guy appears here.
+                    </div>
+                    <Button
+                      onClick={openAddCastModal}
+                      className="rounded-2xl bg-teal-600 px-6 py-4 text-lg font-black text-white hover:bg-teal-500"
+                    >
+                      Add Cast Members
+                    </Button>
                   </div>
                 ) : (
                   <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
