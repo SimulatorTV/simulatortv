@@ -647,11 +647,21 @@ export default function BattleOfTheShowsSimulator() {
   }
 
   function togglePlayerSelection(playerId) {
-    setSelectedPlayerIds((current) =>
-      current.includes(playerId)
+    setSelectedPlayerIds((current) => {
+      const next = current.includes(playerId)
         ? current.filter((id) => id !== playerId)
-        : [...current, playerId]
-    );
+        : [...current, playerId];
+
+      const selectedIdSet = new Set(next);
+      setSelectedTeams((teamNames) =>
+        teamNames.filter((name) => {
+          const team = sourceTeams.find((item) => item.name === name);
+          return team && team.players.filter((player) => selectedIdSet.has(player.id)).length >= teamSize;
+        })
+      );
+
+      return next;
+    });
   }
 
   function selectAllPlayers() {
@@ -941,6 +951,83 @@ export default function BattleOfTheShowsSimulator() {
             </CardContent>
           </Card>
         </div>
+
+
+        {stage === "setup" && !loadingTeams ? (
+          <Card className="border-zinc-800 bg-zinc-950/90 text-white">
+            <CardHeader>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <CardTitle>Added Cast</CardTitle>
+                  <div className="mt-1 text-sm text-zinc-400">
+                    {selectedPlayerIds.length} selected / {rosterPlayers.length} added
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    onClick={openAddCastModal}
+                    className="rounded-2xl bg-teal-600 px-5 py-3 font-black text-white hover:bg-teal-500"
+                  >
+                    Add Cast Members
+                  </Button>
+
+                  <Button variant="outline" onClick={selectAllPlayers} className="rounded-2xl">
+                    Select All
+                  </Button>
+
+                  <Button variant="outline" onClick={selectNoPlayers} className="rounded-2xl">
+                    Select None
+                  </Button>
+                </div>
+              </div>
+            </CardHeader>
+
+            <CardContent>
+              {rosterPlayers.length === 0 ? (
+                <div className="rounded-2xl border border-dashed border-zinc-700 bg-zinc-900 p-6 text-center text-zinc-400">
+                  No cast members added yet.
+                </div>
+              ) : (
+                <div className="grid grid-cols-5 gap-2 sm:grid-cols-5 md:grid-cols-10">
+                  {rosterPlayers.map((player) => {
+                    const active = selectedPlayerIds.includes(player.id);
+
+                    return (
+                      <button
+                        key={player.id}
+                        type="button"
+                        onClick={() => togglePlayerSelection(player.id)}
+                        className={`rounded-2xl border border-white/10 bg-black/20 p-1.5 transition ${
+                          active ? "opacity-100 scale-[1.02]" : "opacity-35 grayscale"
+                        }`}
+                      >
+                        <div className="aspect-square overflow-hidden rounded-xl bg-zinc-900">
+                          <img
+                            src={player.image || fallbackAvatar(player.name)}
+                            alt={player.name}
+                            className="h-full w-full object-cover"
+                            onError={(event) => {
+                              event.currentTarget.src = fallbackAvatar(player.name);
+                            }}
+                          />
+                        </div>
+
+                        <div className="mt-1 truncate text-center text-[10px] font-black sm:text-xs">
+                          {player.name}
+                        </div>
+
+                        <div className="truncate text-center text-[9px] font-bold text-zinc-400">
+                          {player.sourceTeamName}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        ) : null}
 
         {stage === "setup" && loadingTeams ? (
           <Card className="border border-zinc-800 bg-zinc-950/90 text-white">
