@@ -7,6 +7,7 @@ import { useParams } from "next/navigation";
 import Link from "next/link";
 import Navbar from "../../../components/Navbar";
 import EventScreen from "../../../components/survivor/EventScreen";
+import BigBrotherReplayScreen from "../../../components/big-brother/BigBrotherReplayScreen";
 import { supabase } from "../../../lib/supabase";
 
 function getPlayersFromEntry(entry: any) {
@@ -663,19 +664,13 @@ export default function SavedSeasonReplayPage() {
 
   if (started && isBigBrother) {
     return (
-      <BigBrotherRoundReplay
-        round={bigBrotherRounds[stepIndex]}
-        rounds={bigBrotherRounds}
-        currentIndex={stepIndex}
-        onRestart={() => {
+      <BigBrotherReplayScreen
+        seasonFlow={season?.data_json?.seasonFlow}
+        headerLabel="Saved Big Brother replay"
+        onExit={() => {
           setStarted(false);
           setStepIndex(0);
         }}
-        onNext={() =>
-          setStepIndex((current) =>
-            Math.min(bigBrotherRounds.length - 1, current + 1)
-          )
-        }
       />
     );
   }
