@@ -71,6 +71,14 @@ export default function SimulatorsPage() {
           />
 
           <SimulatorCard
+  title="The Traitors"
+  description="Faithfuls, Traitors, murders, shields, recruitments, ultimatums, round tables, and endgame mind games."
+  href="/simulators/the-traitors"
+  buttonText="Open The Traitors"
+  buttonClass="bg-white hover:bg-gray-200 text-black"
+/>
+
+          <SimulatorCard
             title="Card Game Elimination"
             description="Poker, Blackjack, Baccarat, Bingo, War, Liar's Dice, and more."
             href="/simulators/card-game-elimination"
