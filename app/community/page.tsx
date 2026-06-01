@@ -52,13 +52,35 @@ export default function CommunityPage() {
   }
 
   function getPreviewPlayers(season: any): any[] {
+    const type = String(season?.simulator_type || "").toLowerCase();
+
+    if (type.includes("big-brother") || type.includes("big brother")) {
+      return (
+        season?.data_json?.selectedCast ||
+        season?.data_json?.seasonFlow?.rounds?.[0]?.castGrid ||
+        []
+      )
+        .filter((player: any) => player?.image || player?.img)
+        .slice(0, 6);
+    }
+
+    if (type.includes("color")) {
+      return (
+        season?.data_json?.players ||
+        season?.data_json?.preview?.startingCast ||
+        []
+      )
+        .filter((player: any) => player?.image || player?.img)
+        .slice(0, 6);
+    }
+
     const firstEntry = season?.data_json?.season?.[0];
 
     if (!firstEntry?.tribes?.length) return [];
 
     return firstEntry.tribes
       .flatMap((tribe: any) => tribe.members || [])
-      .filter((player: any) => player?.image)
+      .filter((player: any) => player?.image || player?.img)
       .slice(0, 6);
   }
 
@@ -147,7 +169,7 @@ export default function CommunityPage() {
                             className="w-14 h-14 rounded-2xl overflow-hidden border-2 border-gray-900 bg-gray-700"
                           >
                             <img
-                              src={player.image}
+                              src={player.image || player.img}
                               alt={player.name}
                               className="w-full h-full object-cover"
                             />
