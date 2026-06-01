@@ -134,6 +134,7 @@ export default function TheTraitorsSimulator() {
   const [savingSeason, setSavingSeason] = useState(false);
   const [seasonEvents, setSeasonEvents] = useState([]);
   const [winnerInfo, setWinnerInfo] = useState(null);
+  const [eliminationOrder, setEliminationOrder] = useState([]);
   const [recruitmentsUsed, setRecruitmentsUsed] = useState(0);
 
   const [players, setPlayers] = useState([]);
@@ -267,6 +268,7 @@ export default function TheTraitorsSimulator() {
     setLogs([]);
     setSeasonEvents([]);
     setWinnerInfo(null);
+    setEliminationOrder([]);
     setRecruitmentsUsed(0);
     setPresentation({ mode: "cast", pending: null });
   }
@@ -318,6 +320,7 @@ export default function TheTraitorsSimulator() {
           finalPlayers: players,
           events: seasonEvents,
           logs,
+          eliminationOrder,
           winner: winnerInfo,
           prizePot: pot,
         },
@@ -387,6 +390,7 @@ export default function TheTraitorsSimulator() {
     setLogs([]);
     setSeasonEvents([]);
     setWinnerInfo(null);
+    setEliminationOrder([]);
     setRecruitmentsUsed(0);
     setPresentation({ mode: "cast", pending: null });
 
@@ -690,6 +694,7 @@ export default function TheTraitorsSimulator() {
           p.id === data.murderTarget.id ? { ...p, alive: false } : p
         );
         addLog(`Murdered: ${data.murderTarget.name} reveals they were a Faithful.`);
+        setEliminationOrder((prev) => [...prev, data.murderTarget.id]);
       } else if (data.murderTarget) {
         addLog(`The Traitors attempt to murder ${data.murderTarget.name}, but the Shield blocks it.`);
       }
@@ -723,6 +728,7 @@ export default function TheTraitorsSimulator() {
       addLog(`${data.shieldWinner.name} finds the Shield.`);
     }
     addLog(`Banished: ${data.banished.name} receives the most votes and reveals they were a ${data.banished.role}.`);
+    setEliminationOrder((prev) => [...prev, data.banished.id]);
 
     setPlayers(nextPlayers);
     setPot(data.nextPot);
@@ -752,6 +758,7 @@ export default function TheTraitorsSimulator() {
     );
     addLog(`Final ${data.alive.length}: the group does not unanimously agree to end the game.`);
     addLog(`Eliminated: ${data.eliminated.name} is voted out. Their role is not revealed.`);
+    setEliminationOrder((prev) => [...prev, data.eliminated.id]);
     setPlayers(nextPlayers);
     setShieldId(null);
     setPresentation({
@@ -971,13 +978,19 @@ export default function TheTraitorsSimulator() {
         ? pending.snapshotPlayers.filter((p) => p.alive && (!pending.murderTarget || pending.murderBlocked || p.id !== pending.murderTarget.id))
         : pending?.alive || [];
 
+      const sortedVotePool = [...votePool].sort((a, b) => {
+        const voteDiff = (pending?.voteCounts?.[b.id] ?? 0) - (pending?.voteCounts?.[a.id] ?? 0);
+        if (voteDiff !== 0) return voteDiff;
+        return String(a.name).localeCompare(String(b.name));
+      });
+
       return (
         <>
           <div className="bg-zinc-800 border border-zinc-700 rounded-2xl p-3 text-sm text-zinc-200 mb-4 text-center">
             Everyone votes at the round table.
           </div>
           <div className="grid grid-cols-4 sm:grid-cols-5 lg:grid-cols-6 gap-3">
-            {votePool.map((p) => {
+            {sortedVotePool.map((p) => {
               const votedForId = pending?.individualVotes?.[p.id];
               const votedFor =
                 votePool.find((x) => x.id === votedForId)?.name ||
@@ -1091,16 +1104,20 @@ export default function TheTraitorsSimulator() {
             {renderMainPanel()}
 
             <h2 className="text-2xl font-bold mt-6 mb-3">Eliminated</h2>
-            <div className="grid grid-cols-4 sm:grid-cols-5 lg:grid-cols-6 gap-3">
-              {eliminatedPlayers.map((p) => (
-                <PlayerCard
-                  key={p.id}
-                  player={p}
-                  eliminated
-                  redGlow={p.role === "Traitor"}
-                  revealTraitorBadge={p.role === "Traitor"}
-                />
-              ))}
+            <div className="grid grid-cols-4 sm:grid-cols-5 lg:grid-cols-6 gap-3 [direction:rtl] items-end">
+              {eliminationOrder
+                .map((id) => players.find((p) => p.id === id))
+                .filter(Boolean)
+                .map((p) => (
+                  <div key={p.id} className="[direction:ltr]">
+                    <PlayerCard
+                      player={p}
+                      eliminated
+                      redGlow={p.role === "Traitor"}
+                      revealTraitorBadge={p.role === "Traitor"}
+                    />
+                  </div>
+                ))}
             </div>
           </div>
 
