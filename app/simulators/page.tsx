@@ -86,6 +86,14 @@ export default function SimulatorsPage() {
   buttonClass="bg-white hover:bg-gray-200 text-black"
 />
 
+<SimulatorCard
+  title="Hot Seat"
+  description="Choose seats, avoid elimination chairs, survive each round, and find the winning seat in the finale."
+  href="/simulators/hot-seat"
+  buttonText="Open Hot Seat"
+  buttonClass="bg-orange-600 hover:bg-orange-500 text-white"
+/>
+
           <SimulatorCard
             title="Card Game Elimination"
             description="Poker, Blackjack, Baccarat, Bingo, War, Liar's Dice, and more."
