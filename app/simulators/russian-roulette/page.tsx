@@ -44,19 +44,25 @@ function CastTile({ player, active, onClick }) {
 }
 
 function PlayerCard({ player, status = "", numbers = "" }) {
-  const border = status === "challenge"
-    ? "border-green-500 shadow-[0_0_18px_rgba(34,197,94,.75)]"
+  const cardStyle = status === "challenge"
+    ? "border-green-500 bg-green-500 text-black shadow-[0_0_18px_rgba(34,197,94,.75)]"
     : status === "danger" || status === "both"
-      ? "border-red-600 shadow-[0_0_18px_rgba(220,38,38,.75)]"
-      : "border-white";
+      ? "border-red-600 bg-red-600 text-white shadow-[0_0_18px_rgba(220,38,38,.75)]"
+      : "border-white bg-white text-black";
+
+  const numberStyle = status === "danger" || status === "both"
+    ? "text-white"
+    : status === "challenge"
+      ? "text-black"
+      : "text-green-700";
 
   return (
-    <div className={`overflow-hidden rounded-2xl border-4 bg-white p-1 text-black transition ${border}`}>
+    <div className={`overflow-hidden rounded-2xl border-4 p-1 transition ${cardStyle}`}>
       <div className="aspect-square overflow-hidden rounded-xl bg-zinc-200">
         <img src={player.image || fallbackAvatar(player.name)} alt={player.name} className="h-full w-full object-cover" onError={(e) => (e.currentTarget.src = fallbackAvatar(player.name))} />
       </div>
       <div className="mt-1 flex min-h-[30px] items-center justify-center text-center text-[11px] font-black leading-tight sm:text-xs">{player.name}</div>
-      {numbers ? <div className="text-center text-sm font-black text-green-700">#{numbers}</div> : null}
+      {numbers ? <div className={`text-center text-sm font-black ${numberStyle}`}>#{numbers}</div> : null}
     </div>
   );
 }
@@ -572,8 +578,15 @@ export default function RussianRouletteSimulator() {
 
             <div className="flex min-h-[420px] items-center justify-center md:min-h-[650px]">
               <div className="relative h-[360px] w-[360px] rounded-full border-8 border-zinc-600 bg-[radial-gradient(circle,#343434,#101010_72%)] shadow-[inset_0_0_60px_#000,0_0_25px_#000] md:h-[570px] md:w-[570px]">
-                <div className="absolute left-1/2 top-1/2 z-20 -translate-x-1/2 -translate-y-1/2 text-5xl drop-shadow-xl transition-transform duration-[1100ms] ease-out md:text-[82px]" style={{ transform: `translate(-50%, -50%) rotate(${gunRot}deg)` }}>🔫</div>
-                {elimGroup.map((p,i)=>{ const shot=shots.find(s=>s.playerId===p.id); const isFlashing=selectedShooter?.id===p.id && shotReady; const finalDeathSettled=shotResolved && bulletsLeft<=0 && shots.some(s=>s.result==="dead") && !shot; const ang=(i/Math.max(1,elimGroup.length))*Math.PI*2; const center=285; const radius=typeof window !== "undefined" && window.innerWidth < 768 ? 135 : 220; const small=typeof window !== "undefined" && window.innerWidth < 768; const x=(small?180:center)+Math.cos(ang)*radius; const y=(small?180:center)+Math.sin(ang)*radius; return <div key={p.id} className={`absolute z-30 w-[63px] -translate-x-1/2 -translate-y-1/2 rounded-xl border-4 bg-white p-1 text-[9px] font-black text-black transition md:w-[92px] md:text-xs ${shot?.result==="safe" || finalDeathSettled ? "border-green-500 shadow-[0_0_18px_rgba(34,197,94,.85)]" : shot?.result==="dead" ? "border-red-600 grayscale shadow-[0_0_18px_rgba(220,38,38,.85)]" : isFlashing ? "animate-pulse border-yellow-300 shadow-[0_0_25px_rgba(250,204,21,.9)]" : "border-white"}`} style={{ left:x, top:y }}><img src={p.image || fallbackAvatar(p.name)} alt={p.name} className="aspect-square w-full rounded-lg object-cover" onError={(e)=>(e.currentTarget.src=fallbackAvatar(p.name))}/><span>{p.name}</span></div>; })}
+                <div className="absolute left-1/2 top-1/2 z-20 flex h-24 w-24 -translate-x-1/2 -translate-y-1/2 items-center justify-center md:h-32 md:w-32">
+                  <div
+                    className="flex h-full w-full items-center justify-center text-5xl leading-none drop-shadow-xl transition-transform duration-[1100ms] ease-out md:text-[82px]"
+                    style={{ transform: `rotate(${gunRot}deg)`, transformOrigin: "50% 50%" }}
+                  >
+                    🔫
+                  </div>
+                </div>
+                {elimGroup.map((p,i)=>{ const shot=shots.find(s=>s.playerId===p.id); const isFlashing=selectedShooter?.id===p.id && shotReady; const finalDeathSettled=shotResolved && bulletsLeft<=0 && shots.some(s=>s.result==="dead") && !shot; const ang=(i/Math.max(1,elimGroup.length))*Math.PI*2; const center=285; const radius=typeof window !== "undefined" && window.innerWidth < 768 ? 135 : 220; const small=typeof window !== "undefined" && window.innerWidth < 768; const x=(small?180:center)+Math.cos(ang)*radius; const y=(small?180:center)+Math.sin(ang)*radius; return <div key={p.id} className={`absolute z-30 w-[63px] -translate-x-1/2 -translate-y-1/2 rounded-xl border-4 p-1 text-[9px] font-black transition md:w-[92px] md:text-xs ${shot?.result==="safe" || finalDeathSettled ? "border-green-500 bg-green-500 text-black shadow-[0_0_18px_rgba(34,197,94,.85)]" : shot?.result==="dead" ? "border-red-600 bg-red-600 text-white grayscale shadow-[0_0_18px_rgba(220,38,38,.85)]" : isFlashing ? "animate-pulse border-yellow-300 bg-yellow-300 text-black shadow-[0_0_25px_rgba(250,204,21,.9)]" : "border-white bg-white text-black"}`} style={{ left:x, top:y }}><img src={p.image || fallbackAvatar(p.name)} alt={p.name} className="aspect-square w-full rounded-lg object-cover" onError={(e)=>(e.currentTarget.src=fallbackAvatar(p.name))}/><span>{p.name}</span></div>; })}
               </div>
             </div>
 
