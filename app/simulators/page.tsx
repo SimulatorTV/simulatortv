@@ -70,6 +70,15 @@ export default function SimulatorsPage() {
   buttonClass="bg-teal-600 hover:bg-teal-500 text-white"
 />
 
+<SimulatorCard
+  title="Russian Roulette"
+  description="Spin the gun, survive the chamber, manage bullets and clip size, and play normal or tournament mode."
+  href="/simulators/russian-roulette"
+  buttonText="Open Russian Roulette"
+  buttonClass="bg-zinc-300 hover:bg-zinc-200 text-black"
+/>
+
+
           <SimulatorCard
             title="Trio"
             description="Teams of three battle through challenges and eliminations until one trio remains."
