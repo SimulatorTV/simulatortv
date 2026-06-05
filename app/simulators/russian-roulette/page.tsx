@@ -28,6 +28,23 @@ function fallbackAvatar(name) {
   return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
 }
 
+
+function BulletIcons({ count }) {
+  return (
+    <div className="mb-4 flex flex-wrap items-center justify-center gap-2">
+      {Array.from({ length: Math.max(0, count) }, (_, index) => (
+        <span
+          key={index}
+          className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-zinc-500 bg-zinc-900 text-2xl shadow-lg"
+          title="Bullet remaining"
+        >
+          🔫
+        </span>
+      ))}
+    </div>
+  );
+}
+
 function CastTile({ player, active, onClick }) {
   return (
     <button
@@ -343,9 +360,10 @@ export default function RussianRouletteSimulator() {
 
   function startRoulette(group) {
     const clean = group.filter((p) => aliveSet.has(p.id));
+    const adjustedBullets = clean.length <= bullets ? Math.max(1, clean.length - 1) : bullets;
     setElimGroup(clean);
     setShots([]);
-    setBulletsLeft(Math.min(bullets, clean.length));
+    setBulletsLeft(Math.min(adjustedBullets, clean.length));
     setScreen("roulette");
     setGunRot(180);
     setSpinning(false);
@@ -573,8 +591,11 @@ export default function RussianRouletteSimulator() {
 
         {screen === "roulette" && (
           <>
-            <h2 className="text-3xl font-black">{tournament ? `Tournament Round ${round} - Group ${groupIndex + 1}/${groups.length}` : "Russian Roulette"}</h2>
-            <p className="mx-auto mb-4 max-w-4xl text-zinc-300">Bullets left: {bulletsLeft}. Press Spin to select someone, Shoot to reveal the result, then Advance to remove safe players from the circle.</p>
+            <h2 className="text-3xl font-black">
+              {tournament ? `Tournament Round ${round} - Group ${groupIndex + 1}/${groups.length}` : "Roulette Round"}
+            </h2>
+
+            <BulletIcons count={bulletsLeft} />
 
             <div className="flex min-h-[420px] items-center justify-center md:min-h-[650px]">
               <div className="relative h-[360px] w-[360px] rounded-full border-8 border-zinc-600 bg-[radial-gradient(circle,#343434,#101010_72%)] shadow-[inset_0_0_60px_#000,0_0_25px_#000] md:h-[570px] md:w-[570px]">
@@ -590,16 +611,16 @@ export default function RussianRouletteSimulator() {
               </div>
             </div>
 
-            <div className="mx-auto mt-4 max-w-3xl rounded-2xl bg-[#242424] p-4 text-left leading-8">
-              {shots.length === 0 ? <div className="text-zinc-400">No shots yet.</div> : shots.map((s)=>{ const p=selectedRoster.find(x=>x.id===s.playerId)||eliminated.find(x=>x.id===s.playerId); return <div key={`${s.playerId}-${s.result}`} className={s.result==="dead" ? "font-black text-red-400" : "font-black text-green-400"}>{p?.name} is {s.result==="dead" ? "eliminated" : "safe"}</div>; })}
-              {selectedShooter && shotReady && <div className="font-black text-yellow-300">{selectedShooter.name} is in the chamber. Press Shoot.</div>}
-            </div>
-
-            <div className="mt-6">
+            <div className="mt-2">
               {spinning && <button disabled className="rounded-2xl bg-zinc-700 px-8 py-4 text-xl font-black opacity-60">Spinning...</button>}
               {!spinning && !shotReady && !shotResolved && <button onClick={spinGun} className="rounded-2xl bg-red-700 px-8 py-4 text-xl font-black shadow-[0_5px_0_#7f1d1d] hover:bg-red-600">Spin</button>}
               {!spinning && shotReady && !shotResolved && <button onClick={shootGun} className="rounded-2xl bg-red-700 px-8 py-4 text-xl font-black shadow-[0_5px_0_#7f1d1d] hover:bg-red-600">Shoot</button>}
               {!spinning && shotResolved && <button onClick={continueRoulette} className="rounded-2xl bg-red-700 px-8 py-4 text-xl font-black shadow-[0_5px_0_#7f1d1d] hover:bg-red-600">Advance</button>}
+            </div>
+
+            <div className="mx-auto mt-4 max-w-3xl rounded-2xl bg-[#242424] p-4 text-left leading-8">
+              {shots.length === 0 ? <div className="text-zinc-400">No shots yet.</div> : shots.map((s)=>{ const p=selectedRoster.find(x=>x.id===s.playerId)||eliminated.find(x=>x.id===s.playerId); return <div key={`${s.playerId}-${s.result}`} className={s.result==="dead" ? "font-black text-red-400" : "font-black text-green-400"}>{p?.name} is {s.result==="dead" ? "eliminated" : "safe"}</div>; })}
+              {selectedShooter && shotReady && <div className="font-black text-yellow-300">{selectedShooter.name} is in the chamber. Press Shoot.</div>}
             </div>
           </>
         )}
