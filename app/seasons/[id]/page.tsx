@@ -8,6 +8,7 @@ import Link from "next/link";
 import Navbar from "../../../components/Navbar";
 import EventScreen from "../../../components/survivor/EventScreen";
 import BigBrotherReplayScreen from "../../../components/big-brother/BigBrotherReplayScreen";
+import BattleOfTheShowsReplayScreen from "../../../components/battle-of-the-shows/BattleOfTheShowsReplayScreen";
 import { supabase } from "../../../lib/supabase";
 
 function getPlayersFromEntry(entry: any) {
@@ -605,6 +606,10 @@ export default function SavedSeasonReplayPage() {
     season?.simulator_type?.toLowerCase().includes("big-brother") ||
     season?.simulator_type?.toLowerCase().includes("big brother");
 
+  const isBattleOfTheShows =
+    season?.simulator_type?.toLowerCase().includes("battle-of-the-shows") ||
+    season?.simulator_type?.toLowerCase().includes("battle of the shows");
+
   const timeline = season?.data_json?.season || [];
   const bigBrotherRounds = season?.data_json?.seasonFlow?.rounds || [];
 
@@ -617,9 +622,14 @@ export default function SavedSeasonReplayPage() {
       );
     }
 
+    if (isBattleOfTheShows) {
+      const startingTeams = season?.data_json?.startingTeams || season?.data_json?.history?.[0]?.teams || [];
+      return shufflePlayers(startingTeams.flatMap((team) => team.players || []));
+    }
+
     const firstEntry = timeline[0];
     return shufflePlayers(getPlayersFromEntry(firstEntry));
-  }, [season, timeline, isBigBrother, bigBrotherRounds]);
+  }, [season, timeline, isBigBrother, isBattleOfTheShows, bigBrotherRounds]);
 
   const alreadyLiked = likes.some((like) => like.user_id === currentUserId);
 
@@ -667,6 +677,19 @@ export default function SavedSeasonReplayPage() {
       <BigBrotherReplayScreen
         seasonFlow={season?.data_json?.seasonFlow}
         headerLabel="Saved Big Brother replay"
+        onExit={() => {
+          setStarted(false);
+          setStepIndex(0);
+        }}
+      />
+    );
+  }
+
+  if (started && isBattleOfTheShows) {
+    return (
+      <BattleOfTheShowsReplayScreen
+        history={season?.data_json?.history || []}
+        winner={season?.data_json?.winner}
         onExit={() => {
           setStarted(false);
           setStepIndex(0);
@@ -774,7 +797,13 @@ export default function SavedSeasonReplayPage() {
                 setStarted(true);
                 setStepIndex(0);
               }}
-              disabled={isBigBrother ? !bigBrotherRounds.length : !timeline.length}
+              disabled={
+                isBigBrother
+                  ? !bigBrotherRounds.length
+                  : isBattleOfTheShows
+                    ? !(season?.data_json?.history?.length)
+                    : !timeline.length
+              }
               className="bg-blue-600 hover:bg-blue-500 disabled:opacity-40 px-8 py-4 rounded-2xl font-black text-lg"
             >
               Start Replay
