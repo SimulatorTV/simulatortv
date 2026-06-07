@@ -216,7 +216,7 @@ function getTopNomineeGridClass(count) {
   return "grid-cols-2";
 }
 
-function pickEvictedFromNominees(finalNomineePlayers, votingTargets) {
+function getEvictionVoteResult(finalNomineePlayers, votingTargets, tieBreakerVoter = null) {
   const counts = finalNomineePlayers.map((nominee) =>
     votingTargets.reduce((sum, target) => sum + (target === nominee.name ? 1 : 0), 0)
   );
@@ -233,7 +233,20 @@ function pickEvictedFromNominees(finalNomineePlayers, votingTargets) {
     }
   });
 
-  return pickOne(tied);
+  const evictedPlayer = tied.length > 1 ? pickOne(tied) : tied[0] || null;
+
+  return {
+    evictedPlayer,
+    voteCounts: Object.fromEntries(finalNomineePlayers.map((nominee, index) => [nominee.name, counts[index] || 0])),
+    voteTie: tied.length > 1,
+    tieBreakerOptions: tied,
+    tieBreakerVoter,
+    tieBreakerTarget: tied.length > 1 ? evictedPlayer : null,
+  };
+}
+
+function pickEvictedFromNominees(finalNomineePlayers, votingTargets) {
+  return getEvictionVoteResult(finalNomineePlayers, votingTargets).evictedPlayer;
 }
 
 function buildStandardWeekResult({
@@ -323,7 +336,8 @@ function computeStandardWeek({
     (player) => player.name !== hohPlayer?.name && !finalNomineePlayers.some((n) => n.name === player.name)
   );
   const votingTargets = votingPlayers.map(() => pickOne(finalNomineePlayers)?.name ?? null);
-  const evictedPlayer = pickEvictedFromNominees(finalNomineePlayers, votingTargets);
+  const voteResult = getEvictionVoteResult(finalNomineePlayers, votingTargets, hohPlayer);
+  const evictedPlayer = voteResult.evictedPlayer;
   const survivors = castGrid.filter((player) => player.name !== evictedPlayer?.name);
 
   return buildStandardWeekResult({
@@ -342,7 +356,7 @@ function computeStandardWeek({
     votingPlayers,
     votingTargets,
     survivors,
-    extra,
+    extra: { ...voteResult, ...extra },
   });
 }
 
@@ -442,7 +456,8 @@ function generateForcedVetoRound(activePlayers, weekNumber, twistId, lastHohName
   );
 
   const votingTargets = votingPlayers.map(() => pickOne(finalNomineePlayers)?.name || null);
-  const evictedPlayer = pickEvictedFromNominees(finalNomineePlayers, votingTargets);
+  const voteResult = getEvictionVoteResult(finalNomineePlayers, votingTargets, hohPlayer);
+  const evictedPlayer = voteResult.evictedPlayer;
   const survivors = castGrid.filter(p => p.name !== evictedPlayer?.name);
 
   return buildStandardWeekResult({
@@ -461,6 +476,7 @@ function generateForcedVetoRound(activePlayers, weekNumber, twistId, lastHohName
     votingPlayers,
     votingTargets,
     survivors,
+    extra: voteResult,
   });
 }
 
@@ -480,7 +496,8 @@ function generateChainOfSafetyRound(activePlayers, weekNumber, twistId) {
   const finalNomineePlayers = [...nomineePlayers];
   const votingPlayers = [...safeOrder];
   const votingTargets = votingPlayers.map(() => pickOne(finalNomineePlayers)?.name ?? null);
-  const evictedPlayer = pickEvictedFromNominees(finalNomineePlayers, votingTargets);
+  const voteResult = getEvictionVoteResult(finalNomineePlayers, votingTargets, hohPlayer || null);
+  const evictedPlayer = voteResult.evictedPlayer;
   const survivors = castGrid.filter((player) => player.name !== evictedPlayer?.name);
 
   return {
@@ -499,6 +516,11 @@ function generateChainOfSafetyRound(activePlayers, weekNumber, twistId) {
     votingPlayers,
     votingTargets,
     evictedPlayer,
+    voteTie: voteResult?.voteTie || false,
+    tieBreakerOptions: voteResult?.tieBreakerOptions || [],
+    tieBreakerVoter: voteResult?.tieBreakerVoter || null,
+    tieBreakerTarget: voteResult?.tieBreakerTarget || null,
+    voteCounts: voteResult?.voteCounts || {},
     survivors,
     lastHohName: null,
     safeOrder,
@@ -514,7 +536,8 @@ function generateSurvivorRound(activePlayers, weekNumber, twistId) {
     const targets = finalNomineePlayers.filter((player) => player.name !== voter.name);
     return pickOne(targets)?.name ?? null;
   });
-  const evictedPlayer = pickEvictedFromNominees(finalNomineePlayers, votingTargets);
+  const voteResult = getEvictionVoteResult(finalNomineePlayers, votingTargets, hohPlayer || immunityWinner || executionerWinner || null);
+  const evictedPlayer = voteResult.evictedPlayer;
   const survivors = castGrid.filter((player) => player.name !== evictedPlayer?.name);
 
   return {
@@ -534,6 +557,11 @@ function generateSurvivorRound(activePlayers, weekNumber, twistId) {
     votingPlayers,
     votingTargets,
     evictedPlayer,
+    voteTie: voteResult?.voteTie || false,
+    tieBreakerOptions: voteResult?.tieBreakerOptions || [],
+    tieBreakerVoter: voteResult?.tieBreakerVoter || null,
+    tieBreakerTarget: voteResult?.tieBreakerTarget || null,
+    voteCounts: voteResult?.voteCounts || {},
     survivors,
     lastHohName: null,
   };
@@ -545,7 +573,8 @@ function generateExecutionerRound(activePlayers, weekNumber, twistId) {
   const finalNomineePlayers = activePlayers.filter((player) => player.name !== executionerWinner?.name);
   const votingPlayers = executionerWinner ? [executionerWinner] : [];
   const votingTargets = [pickOne(finalNomineePlayers)?.name ?? null];
-  const evictedPlayer = pickEvictedFromNominees(finalNomineePlayers, votingTargets);
+  const voteResult = getEvictionVoteResult(finalNomineePlayers, votingTargets, hohPlayer || immunityWinner || executionerWinner || null);
+  const evictedPlayer = voteResult.evictedPlayer;
   const survivors = castGrid.filter((player) => player.name !== evictedPlayer?.name);
 
   return {
@@ -565,6 +594,11 @@ function generateExecutionerRound(activePlayers, weekNumber, twistId) {
     votingPlayers,
     votingTargets,
     evictedPlayer,
+    voteTie: voteResult?.voteTie || false,
+    tieBreakerOptions: voteResult?.tieBreakerOptions || [],
+    tieBreakerVoter: voteResult?.tieBreakerVoter || null,
+    tieBreakerTarget: voteResult?.tieBreakerTarget || null,
+    voteCounts: voteResult?.voteCounts || {},
     survivors,
     lastHohName: null,
   };
@@ -597,7 +631,8 @@ function generateBbukRound(activePlayers, weekNumber, twistId) {
     (player) => !finalNomineePlayers.some((nominee) => nominee.name === player.name)
   );
   const votingTargets = votingPlayers.map(() => pickOne(finalNomineePlayers)?.name ?? null);
-  const evictedPlayer = pickEvictedFromNominees(finalNomineePlayers, votingTargets);
+  const voteResult = getEvictionVoteResult(finalNomineePlayers, votingTargets, hohPlayer || null);
+  const evictedPlayer = voteResult.evictedPlayer;
   const survivors = castGrid.filter((player) => player.name !== evictedPlayer?.name);
 
   return {
@@ -635,7 +670,8 @@ function generateBbAuRound(activePlayers, weekNumber, twistId, lastHohName) {
     const targets = finalNomineePlayers.filter((nominee) => nominee.name !== voter.name);
     return pickOne(targets.length ? targets : finalNomineePlayers)?.name ?? null;
   });
-  const evictedPlayer = pickEvictedFromNominees(finalNomineePlayers, votingTargets);
+  const voteResult = getEvictionVoteResult(finalNomineePlayers, votingTargets, hohPlayer || immunityWinner || executionerWinner || null);
+  const evictedPlayer = voteResult.evictedPlayer;
   const survivors = castGrid.filter((player) => player.name !== evictedPlayer?.name);
 
   return {
@@ -654,6 +690,11 @@ function generateBbAuRound(activePlayers, weekNumber, twistId, lastHohName) {
     votingPlayers,
     votingTargets,
     evictedPlayer,
+    voteTie: voteResult?.voteTie || false,
+    tieBreakerOptions: voteResult?.tieBreakerOptions || [],
+    tieBreakerVoter: voteResult?.tieBreakerVoter || null,
+    tieBreakerTarget: voteResult?.tieBreakerTarget || null,
+    voteCounts: voteResult?.voteCounts || {},
     survivors,
     lastHohName: hohPlayer?.name ?? null,
   };
@@ -1028,7 +1069,6 @@ function generateMajorityRulesRound(activePlayers, weekNumber, twistId) {
 
 function generateFinal3Round(activePlayers, juryPlayers) {
   const castGrid = [...activePlayers];
-  const orderedJuryPlayers = [...juryPlayers].reverse();
   const part1Winner = pickOne(activePlayers);
   const part2Pool = activePlayers.filter((player) => player.name !== part1Winner?.name);
   const part2Winner = pickOne(part2Pool);
@@ -1039,6 +1079,7 @@ function generateFinal3Round(activePlayers, juryPlayers) {
   ];
   const finalEvictedPlayer = activePlayers.find((player) => !protectedNames.includes(player.name)) || null;
   const finalists = activePlayers.filter((player) => player.name !== finalEvictedPlayer?.name);
+  const orderedJuryPlayers = [finalEvictedPlayer, ...[...juryPlayers].reverse()].filter(Boolean);
   const juryVotes = orderedJuryPlayers.map((juror) => ({ juror, targetName: pickOne(finalists)?.name ?? null }));
 
   const voteCounts = finalists.map((finalist) =>
@@ -1154,7 +1195,9 @@ function generateSeasonFlow(selectedCast, weekTwists, jurySize) {
   }
 
   if (activePlayers.length === 3) {
-    const finalJuryPlayers = juryPlayers.slice(-Math.max(1, Math.min(jurySize || juryPlayers.length || 1, juryPlayers.length)));
+    const targetJurySize = Math.max(1, Math.min(jurySize || juryPlayers.length + 1 || 1, juryPlayers.length + 1));
+    const previousJuryCount = Math.max(0, Math.min(targetJurySize - 1, juryPlayers.length));
+    const finalJuryPlayers = juryPlayers.slice(-previousJuryCount);
     rounds.push(generateFinal3Round(activePlayers, finalJuryPlayers));
   }
 
@@ -1440,14 +1483,17 @@ function StartingCastScreen({
   revealedFinal3,
   revealedFinalHohVote,
   revealedJuryVotes,
+  revealedTieBreakerVote,
   onAdvance,
   onRevealNominee,
   onRevealVetoDecision,
   onRevealReplacement,
   onRevealVote,
+  onRevealAllVotes,
   onRevealFinal3Block,
   onRevealFinalHohVote,
   onRevealJuryVote,
+  onRevealTieBreakerVote,
 }) {
   const round = seasonFlow.rounds[roundIndex];
   if (!round) return null;
@@ -1573,6 +1619,12 @@ function StartingCastScreen({
                 </div>
               ))}
             </div>
+            <div className="flex justify-center">
+              <Button onClick={onRevealAllVotes} className="rounded-xl" variant="secondary">
+                Reveal All
+              </Button>
+            </div>
+
             <div className="grid grid-cols-10 gap-2 max-w-6xl mx-auto items-start">
               {round.juryPlayers.map((player, index) => {
                 const targetName = round.juryVotes[index]?.targetName || "No vote";
@@ -1650,6 +1702,12 @@ function StartingCastScreen({
               {currentMajorityLoop?.nominee ? <StartCastTile player={currentMajorityLoop.nominee} bgClassName="bg-blue-200" /> : null}
               <div className="text-3xl font-bold text-green-600 min-w-8 text-center">{saveCount}</div>
             </div>
+            <div className="flex justify-center">
+              <Button onClick={onRevealAllVotes} className="rounded-xl" variant="secondary">
+                Reveal All
+              </Button>
+            </div>
+
             <div className="grid grid-cols-10 gap-2 max-w-6xl mx-auto items-start">
               {(currentMajorityLoop?.votingPlayers || []).map((player, index) => {
                 const revealed = revealedVotes[index];
@@ -1719,6 +1777,12 @@ function StartingCastScreen({
         <Card className="bg-white/25 border-white/20 rounded-3xl shadow-2xl backdrop-blur-sm">
           <CardHeader><CardTitle className="text-stone-900 text-center text-2xl">Random Elimination</CardTitle></CardHeader>
           <CardContent className="space-y-6">
+            <div className="flex justify-center">
+              <Button onClick={onRevealAllVotes} className="rounded-xl" variant="secondary">
+                Reveal All
+              </Button>
+            </div>
+
             <div className="grid grid-cols-10 gap-2 max-w-6xl mx-auto items-start">
               {round.votingPlayers.map((player, index) => {
                 const revealed = revealedVotes[index];
@@ -2458,6 +2522,12 @@ function StartingCastScreen({
                 </div>
               ))}
             </div>
+            <div className="flex justify-center">
+              <Button onClick={onRevealAllVotes} className="rounded-xl" variant="secondary">
+                Reveal All
+              </Button>
+            </div>
+
             <div className="grid grid-cols-10 gap-2 max-w-6xl mx-auto items-start">
               {round.votingPlayers.map((player, index) => {
                 const targetName = round.votingTargets[index] || "No vote";
@@ -2508,6 +2578,48 @@ function StartingCastScreen({
                 <StartCastTile key={player.name} player={player} bgClassName="bg-blue-200" grayscale />
               ))}
               <div className="basis-full" />
+              <Button onClick={onAdvance} className="rounded-xl mt-2">Advance</Button>
+            </CardContent>
+          </Card>
+        </div>
+      );
+    }
+
+    if (round.voteTie && round.tieBreakerVoter && round.tieBreakerTarget) {
+      return (
+        <div className="space-y-6">
+          <Card className="bg-white/25 border-white/20 rounded-3xl shadow-2xl backdrop-blur-sm text-center">
+            <CardHeader><CardTitle className="text-stone-900 text-2xl">Tiebreaker Vote</CardTitle></CardHeader>
+            <CardContent className="flex flex-col items-center gap-6">
+              <div className="flex flex-wrap items-start justify-center gap-6">
+                <div>
+                  <StartCastTile player={round.tieBreakerVoter} bgClassName="bg-lime-200" />
+                  <div className="mt-2 text-sm font-bold text-stone-900">Head of Household</div>
+                </div>
+                <MysteryTile
+                  label={revealedTieBreakerVote ? round.tieBreakerTarget?.name || "Tiebreaker vote" : "? vote"}
+                  onClick={onRevealTieBreakerVote}
+                  revealed={revealedTieBreakerVote}
+                  bgClassName="bg-blue-200"
+                >
+                  {round.tieBreakerTarget ? <img src={round.tieBreakerTarget.image} alt={round.tieBreakerTarget.name} className="h-full w-full object-cover" /> : null}
+                </MysteryTile>
+              </div>
+
+              <div className="w-full border-t border-black/10 pt-5">
+                <div className="mb-3 text-xl font-black text-stone-900">Evicted Houseguest</div>
+                <div className="flex justify-center">
+                  <MysteryTile
+                    label={revealedTieBreakerVote ? round.evictedPlayer?.name || "Evicted" : "?"}
+                    onClick={onRevealTieBreakerVote}
+                    revealed={revealedTieBreakerVote}
+                    bgClassName="bg-blue-200"
+                  >
+                    {round.evictedPlayer ? <img src={round.evictedPlayer.image} alt={round.evictedPlayer.name} className="h-full w-full object-cover grayscale" /> : null}
+                  </MysteryTile>
+                </div>
+              </div>
+
               <Button onClick={onAdvance} className="rounded-xl mt-2">Advance</Button>
             </CardContent>
           </Card>
@@ -2603,6 +2715,7 @@ export default function BigBrotherSimulator() {
   const [revealedFinal3, setRevealedFinal3] = useState([false, false, false]);
   const [revealedFinalHohVote, setRevealedFinalHohVote] = useState(false);
   const [revealedJuryVotes, setRevealedJuryVotes] = useState([]);
+  const [revealedTieBreakerVote, setRevealedTieBreakerVote] = useState(false);
   const [bulkTwist, setBulkTwist] = useState("normal");
   const [lockedWeeks, setLockedWeeks] = useState({});
   const [jurySize, setJurySize] = useState(7);
@@ -2889,6 +3002,7 @@ export default function BigBrotherSimulator() {
     setRevealedFinal3([false, false, false]);
     setRevealedFinalHohVote(false);
     setRevealedJuryVotes(round?.juryPlayers?.map(() => false) || []);
+    setRevealedTieBreakerVote(false);
   };
 
   const startGame = () => {
@@ -2979,9 +3093,50 @@ export default function BigBrotherSimulator() {
   const revealVetoDecision = () => setVetoDecisionRevealed(true);
   const revealReplacement = () => setVetoReplacementRevealed(true);
   const revealVote = (index) => setRevealedVotes((previous) => previous.map((value, i) => (i === index ? true : value)));
+  const revealAllVotes = () => {
+    const currentRound = seasonFlow?.rounds?.[roundIndex];
+
+    if (!currentRound) return;
+
+    const currentPhase =
+      currentRound.type === "final3"
+        ? FINAL3_PHASES[phaseIndex]
+        : currentRound.type === "majority_rules"
+          ? "majorityVoteReveal"
+          : "";
+
+    if (currentPhase === "juryVoteReveal") {
+      setRevealedJuryVotes((currentRound.juryVotes || []).map(() => true));
+      return;
+    }
+
+    if (currentRound.type === "majority_rules") {
+      const majorityPhaseSequence = currentRound.loops
+        .flatMap((loop) =>
+          loop.outcome === "saved"
+            ? ["majorityCompetition", "majorityNomination", "majorityVoteReveal", "majoritySafeLoop"]
+            : ["majorityCompetition", "majorityNomination", "majorityVoteReveal"]
+        )
+        .concat(["evicted"]);
+
+      const majorityLoopIndex = Math.min(
+        currentRound.loops.length - 1,
+        majorityPhaseSequence
+          .slice(0, phaseIndex + 1)
+          .filter((phase) => phase === "majorityCompetition").length - 1
+      );
+
+      const currentLoop = currentRound.loops[Math.max(0, majorityLoopIndex)];
+      setRevealedVotes((currentLoop?.votingPlayers || []).map(() => true));
+      return;
+    }
+
+    setRevealedVotes((currentRound.votingPlayers || []).map(() => true));
+  };
   const revealFinal3Block = (index) => setRevealedFinal3((previous) => previous.map((value, i) => (i === index ? true : value)));
   const revealFinalHohVote = () => setRevealedFinalHohVote(true);
   const revealJuryVote = (index) => setRevealedJuryVotes((previous) => previous.map((value, i) => (i === index ? true : value)));
+  const revealTieBreakerVote = () => setRevealedTieBreakerVote(true);
 
   const currentRound = seasonFlow?.rounds?.[roundIndex] || null;
   const isWinnerScreen = Boolean(
@@ -3084,14 +3239,17 @@ export default function BigBrotherSimulator() {
             revealedFinal3={revealedFinal3}
             revealedFinalHohVote={revealedFinalHohVote}
             revealedJuryVotes={revealedJuryVotes}
+            revealedTieBreakerVote={revealedTieBreakerVote}
             onAdvance={advanceSeasonFlow}
             onRevealNominee={revealNominee}
             onRevealVetoDecision={revealVetoDecision}
             onRevealReplacement={revealReplacement}
             onRevealVote={revealVote}
+            onRevealAllVotes={revealAllVotes}
             onRevealFinal3Block={revealFinal3Block}
             onRevealFinalHohVote={revealFinalHohVote}
             onRevealJuryVote={revealJuryVote}
+            onRevealTieBreakerVote={revealTieBreakerVote}
           />
         ) : null}
 
