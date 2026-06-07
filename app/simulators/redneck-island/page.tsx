@@ -63,12 +63,14 @@ function Card({ children, className = "" }) {
   return <div className={`rounded-3xl border border-zinc-800 bg-zinc-950/90 shadow-2xl ${className}`}>{children}</div>;
 }
 
-function PlayerCard({ player, small = false, teamColor = "#f8f8f8", sideALabel = "Side A", sideBLabel = "Side B", gray = false }) {
+function PlayerCard({ player, small = false, teamColor = "#f8f8f8", sideALabel = "Side A", sideBLabel = "Side B", gray = false, large = false }) {
   const bg = teamColor || "#f8f8f8";
   const fg = textForBg(bg);
   const sideText = player?.side === "A" ? sideALabel : player?.side === "B" ? sideBLabel : "";
+  const sizeClass = large ? "w-32 sm:w-40" : small ? "w-20 sm:w-24" : "w-24 sm:w-28";
+
   return (
-    <div className={`${small ? "w-24" : ""} rounded-2xl p-1.5 text-center shadow-lg`} style={{ background: bg, color: fg, border: `3px solid ${darken(bg)}` }}>
+    <div className={`${sizeClass} shrink-0 rounded-2xl p-1.5 text-center shadow-lg`} style={{ background: bg, color: fg, border: `3px solid ${darken(bg)}` }}>
       <div className="aspect-square overflow-hidden rounded-xl bg-zinc-900">
         <img src={player?.image || fallbackAvatar(player?.name)} alt={player?.name} className={`h-full w-full object-cover ${gray ? "grayscale opacity-60" : ""}`} onError={(e) => (e.currentTarget.src = fallbackAvatar(player?.name))} />
       </div>
@@ -81,14 +83,55 @@ function PlayerCard({ player, small = false, teamColor = "#f8f8f8", sideALabel =
 function TeamMini({ team, sideALabel, sideBLabel, compact = false }) {
   if (!team) return null;
   return (
-    <div className="overflow-hidden rounded-3xl border-4 bg-zinc-950" style={{ borderColor: team.color?.hex || "#555" }}>
+    <div className={`overflow-hidden rounded-3xl border-4 bg-zinc-950 ${compact ? "max-w-xs" : ""}`} style={{ borderColor: team.color?.hex || "#555" }}>
       <div className="px-3 py-2 text-center font-black" style={{ background: team.color?.hex || "#777", color: textForBg(team.color?.hex) }}>{team.color?.name || "Team"}</div>
-      <div className={`flex flex-wrap justify-center gap-2 p-3 ${compact ? "scale-90" : ""}`}>
+      <div className="flex flex-wrap justify-center gap-2 p-3">
         {(team.players || []).map((p) => <PlayerCard key={p.id || p.name} player={p} small teamColor={team.color?.hex} sideALabel={sideALabel} sideBLabel={sideBLabel} />)}
       </div>
     </div>
   );
 }
+
+
+function CompactVoteTeam({ team }) {
+  if (!team) return null;
+
+  return (
+    <div
+      className="mt-2 rounded-xl border-2 p-2"
+      style={{
+        background: team.color?.hex || "#777",
+        color: textForBg(team.color?.hex),
+        borderColor: darken(team.color?.hex),
+      }}
+    >
+      <div className="mb-1 text-center text-xs font-black">
+        {team.color?.name || "Team"} Team
+      </div>
+
+      <div className="flex items-start justify-center gap-2">
+        {(team.players || []).map((player) => (
+          <div key={player.id || player.name} className="w-12 text-center sm:w-14">
+            <div className="aspect-square overflow-hidden rounded-lg bg-zinc-900">
+              <img
+                src={player.image || fallbackAvatar(player.name)}
+                alt={player.name}
+                className="h-full w-full object-cover"
+                onError={(event) => {
+                  event.currentTarget.src = fallbackAvatar(player.name);
+                }}
+              />
+            </div>
+            <div className="mt-1 truncate text-[9px] font-black leading-tight sm:text-[10px]">
+              {player.name}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 
 function AddCastMembersModal({ casts, modalCastId, modalContestants, modalSelectedIds, loadingCasts, loadingContestants, onClose, onChooseCast, onToggleContestant, onSelectAll, onSelectNone, onAddSelected }) {
   const officialCasts = casts.filter((cast) => cast.is_official);
@@ -324,7 +367,36 @@ export default function RedneckIslandSimulator() {
   function currentVoteCounts() { const counts = {}; voteLog.forEach((v) => { if (revealedVotes.includes(v.index)) counts[v.team.id] = (counts[v.team.id] || 0) + 1; }); return counts; }
   function isFinaleChallenge() { return rankedTeams.length > 0 && rankedTeams.length <= finaleTeams; }
   function revealAllVotes() { setRevealedVotes(voteLog.map((v) => v.index)); }
-  function renderMatchup(index, showResult) { if (!pendingElim) return null; const pair = pendingElim.pairings[index]; const winner = pendingElim.winners[index]; const loser = pendingElim.eliminated[index]; return <div className="flex flex-wrap items-center justify-center gap-5">{pair.map((p) => <div key={p.id} className="text-center"><div className={showResult && p.id === loser?.id ? "opacity-50 grayscale" : ""}><PlayerCard player={p} teamColor={getPlayerTeamColor(p.id)} sideALabel={sideALabel} sideBLabel={sideBLabel} /></div>{showResult && p.id === winner?.id ? <div className="mt-2 rounded-full bg-green-500 px-3 py-1 font-black text-black">Winner</div> : null}{showResult && p.id === loser?.id ? <div className="mt-2 rounded-full bg-red-600 px-3 py-1 font-black text-white">Eliminated</div> : null}</div>)}</div>; }
+  function renderMatchup(index, showResult) {
+    if (!pendingElim) return null;
+    const pair = (pendingElim.pairings[index] || []).filter(Boolean);
+    const winner = pendingElim.winners[index];
+    const loser = pendingElim.eliminated[index];
+
+    return (
+      <div className="my-5 flex flex-wrap items-start justify-center gap-4 sm:gap-8">
+        {pair.map((p) => (
+          <div key={p.id} className="flex w-36 flex-col items-center sm:w-44">
+            <div className={showResult && p.id === loser?.id ? "opacity-55 grayscale" : ""}>
+              <PlayerCard
+                player={p}
+                large
+                teamColor={getPlayerTeamColor(p.id)}
+                sideALabel={sideALabel}
+                sideBLabel={sideBLabel}
+              />
+            </div>
+            {showResult && p.id === winner?.id ? (
+              <div className="mt-2 w-full rounded-full bg-green-500 px-3 py-1 text-center font-black text-black">Winner</div>
+            ) : null}
+            {showResult && p.id === loser?.id ? (
+              <div className="mt-2 w-full rounded-full bg-red-600 px-3 py-1 text-center font-black text-white">Eliminated</div>
+            ) : null}
+          </div>
+        ))}
+      </div>
+    );
+  }
 
   async function saveSeason() {
     const winner = teams[0]; if (!winner) return;
@@ -346,9 +418,9 @@ export default function RedneckIslandSimulator() {
 
   {screen === "challenge" && <Card className="p-5"><h2 className="mb-3 text-3xl font-black">{teams.length <= finaleTeams ? "Finale Challenge Results" : "Challenge Results"}</h2>{rankedTeams.length === 3 && rankedTeams.length > finaleTeams ? <div className="mb-4 font-black text-yellow-300">Final 3 teams: winners are safe. The other teams go straight to elimination.</div> : null}<div className="space-y-4">{rankedTeams.map((t,i)=><div key={t.id} className="rounded-3xl border-4 p-3" style={{background:t.color.hex,color:textForBg(t.color.hex),borderColor:darken(t.color.hex)}}><div className="flex flex-wrap items-center justify-center gap-4"><span className="text-2xl font-black">#{i+1}</span><TeamMini team={t} sideALabel={sideALabel} sideBLabel={sideBLabel} compact/>{i===0 && <b className="rounded-full bg-green-500 px-3 py-1 text-black">{teams.length <= finaleTeams ? "Winners" : "Immune"}</b>}{i===rankedTeams.length-1 && teams.length > finaleTeams && rankedTeams.length > 3 && <b className="rounded-full bg-red-600 px-3 py-1 text-white">Last Place</b>}</div></div>)}</div>{teams.length <= finaleTeams ? <button onClick={() => { setTeams([rankedTeams[0]]); setScreen("winner"); record("winner", { teams:[rankedTeams[0]], winner: rankedTeams[0], sideALabel, sideBLabel }); }} className="mt-5 rounded-2xl bg-orange-700 px-8 py-4 text-lg font-black hover:bg-orange-600">Crown Winners</button> : rankedTeams.length === 3 ? <button onClick={runThreeTeamElimination} className="mt-5 rounded-2xl bg-orange-700 px-8 py-4 text-lg font-black hover:bg-orange-600">Advance To Elimination</button> : <button onClick={runVote} className="mt-5 rounded-2xl bg-orange-700 px-8 py-4 text-lg font-black hover:bg-orange-600">Advance To Vote</button>}</Card>}
 
-  {screen === "vote" && <Card className="p-5"><h2 className="text-3xl font-black">House Vote</h2><p className="mt-2 text-zinc-400">{voteLog[0]?.note}</p><div className="my-4 flex flex-wrap justify-center gap-2">{teams.filter((t) => winningTeam && lastPlaceTeam && t.id !== winningTeam.id && t.id !== lastPlaceTeam.id).map((t) => <div key={t.id} className="rounded-full border border-zinc-700 bg-zinc-900 px-4 py-2 font-black"><span className="mr-2 inline-block h-5 w-5 rounded" style={{ background: t.color.hex }} />{currentVoteCounts()[t.id] || 0}</div>)}</div><button onClick={revealAllVotes} className="mb-5 rounded-xl bg-zinc-800 px-4 py-2 font-black hover:bg-zinc-700">Reveal All Votes</button><div className="grid gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">{voteLog.map((v) => { const shown = revealedVotes.includes(v.index); const voterTeam = teams.find((t) => t.players.some((p) => p.id === v.voter.id)); return <div key={v.index} className="rounded-2xl border-4 p-3 text-center" style={{background:voterTeam?.color.hex,color:textForBg(voterTeam?.color.hex),borderColor:darken(voterTeam?.color.hex)}}><div className="font-black">#{teamPlacement(voterTeam?.id) || ""}</div><PlayerCard player={v.voter} small teamColor={voterTeam?.color.hex}/>{!shown ? <><div className="my-3 rounded-xl bg-black/70 p-3 text-white">Vote Hidden</div><button onClick={() => setRevealedVotes((cur) => cur.includes(v.index) ? cur : [...cur, v.index])} className="rounded-xl bg-white px-3 py-2 font-black text-black">Reveal Vote</button></> : <div className="mt-3 rounded-xl border-4 p-3" style={{background:v.team.color.hex,color:textForBg(v.team.color.hex),borderColor:darken(v.team.color.hex)}}><b>Voted For</b><TeamMini team={v.team} compact sideALabel={sideALabel} sideBLabel={sideBLabel}/></div>}</div>; })}</div>{revealedVotes.length === voteLog.length && <div className="mt-5"><h3 className="mb-3 text-2xl font-black">Team Voted Into Elimination</h3><TeamMini team={votedTeam} sideALabel={sideALabel} sideBLabel={sideBLabel}/><button onClick={runElimination} className="mt-5 rounded-2xl bg-orange-700 px-8 py-4 text-lg font-black hover:bg-orange-600">Advance To Elimination</button></div>}</Card>}
+  {screen === "vote" && <Card className="p-5"><h2 className="text-3xl font-black">House Vote</h2><p className="mt-2 text-zinc-400">{voteLog[0]?.note}</p><div className="my-4 flex flex-wrap justify-center gap-2">{teams.filter((t) => winningTeam && lastPlaceTeam && t.id !== winningTeam.id && t.id !== lastPlaceTeam.id).map((t) => <div key={t.id} className="rounded-full border border-zinc-700 bg-zinc-900 px-4 py-2 font-black"><span className="mr-2 inline-block h-5 w-5 rounded" style={{ background: t.color.hex }} />{currentVoteCounts()[t.id] || 0}</div>)}</div><button onClick={revealAllVotes} className="mb-5 rounded-xl bg-zinc-800 px-4 py-2 font-black hover:bg-zinc-700">Reveal All Votes</button><div className="grid gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">{voteLog.map((v) => { const shown = revealedVotes.includes(v.index); const voterTeam = teams.find((t) => t.players.some((p) => p.id === v.voter.id)); return <div key={v.index} className="rounded-2xl border-4 p-3 text-center" style={{background:voterTeam?.color.hex,color:textForBg(voterTeam?.color.hex),borderColor:darken(voterTeam?.color.hex)}}><div className="font-black">#{teamPlacement(voterTeam?.id) || ""}</div><PlayerCard player={v.voter} small teamColor={voterTeam?.color.hex}/>{!shown ? <><div className="my-3 rounded-xl bg-black/70 p-3 text-white">Vote Hidden</div><button onClick={() => setRevealedVotes((cur) => cur.includes(v.index) ? cur : [...cur, v.index])} className="rounded-xl bg-white px-3 py-2 font-black text-black">Reveal Vote</button></> : <div className="mt-3 rounded-xl border-4 p-3" style={{background:v.team.color.hex,color:textForBg(v.team.color.hex),borderColor:darken(v.team.color.hex)}}><b>Voted For</b><CompactVoteTeam team={v.team} /></div>}</div>; })}</div>{revealedVotes.length === voteLog.length && <div className="mt-5"><h3 className="mb-3 text-2xl font-black">Team Voted Into Elimination</h3><TeamMini team={votedTeam} sideALabel={sideALabel} sideBLabel={sideBLabel}/><button onClick={runElimination} className="mt-5 rounded-2xl bg-orange-700 px-8 py-4 text-lg font-black hover:bg-orange-600">Advance To Elimination</button></div>}</Card>}
 
-  {screen === "elim" && pendingElim && <Card className="p-5"><h2 className="mb-4 text-3xl font-black">{pendingElim.finalist ? "Finale Elimination" : "Elimination"}</h2>{elimStep === "matchups" && <><h3 className="text-2xl font-black">Matchups</h3>{renderMatchup(0,false)}{renderMatchup(1,false)}</>}{elimStep === "matchup1" && <><h3 className="text-2xl font-black">Matchup 1</h3>{renderMatchup(0,false)}</>}{elimStep === "result1" && <><h3 className="text-2xl font-black">Matchup 1 Result</h3>{renderMatchup(0,true)}</>}{elimStep === "matchup2" && <><h3 className="text-2xl font-black">Matchup 2</h3>{renderMatchup(1,false)}</>}{elimStep === "result2" && <><h3 className="text-2xl font-black">Matchup 2 Result</h3>{renderMatchup(1,true)}</>}{elimStep === "winnersSeparate" && <><h3 className="text-2xl font-black">Winners Before Combining</h3><div className="grid gap-4 sm:grid-cols-2">{pendingElim.separatePreviewTeams.map((t) => <TeamMini key={t.id} team={t} sideALabel={sideALabel} sideBLabel={sideBLabel}/>)}</div></>}{elimStep === "combined" && <><h3 className="text-2xl font-black">New Combined Team</h3><TeamMini team={pendingElim.newTeam} sideALabel={sideALabel} sideBLabel={sideBLabel}/></>}<button onClick={advanceElimStep} className="mt-5 rounded-2xl bg-orange-700 px-8 py-4 text-lg font-black hover:bg-orange-600">Advance</button></Card>}
+  {screen === "elim" && pendingElim && <Card className="p-5"><h2 className="mb-4 text-3xl font-black">{pendingElim.finalist ? "Finale Elimination" : "Elimination"}</h2>{elimStep === "matchups" && <><h3 className="text-2xl font-black">Matchups</h3>{renderMatchup(0,false)}{renderMatchup(1,false)}</>}{elimStep === "matchup1" && <><h3 className="text-2xl font-black">Matchup 1</h3>{renderMatchup(0,false)}</>}{elimStep === "result1" && <><h3 className="text-2xl font-black">Matchup 1 Result</h3>{renderMatchup(0,true)}</>}{elimStep === "matchup2" && <><h3 className="text-2xl font-black">Matchup 2</h3>{renderMatchup(1,false)}</>}{elimStep === "result2" && <><h3 className="text-2xl font-black">Matchup 2 Result</h3>{renderMatchup(1,true)}</>}{elimStep === "winnersSeparate" && <><h3 className="text-2xl font-black">Winners Before Combining</h3><div className="mx-auto grid max-w-2xl gap-4 sm:grid-cols-2">{pendingElim.separatePreviewTeams.map((t) => <TeamMini key={t.id} team={t} sideALabel={sideALabel} sideBLabel={sideBLabel}/>)}</div></>}{elimStep === "combined" && <><h3 className="text-2xl font-black">New Combined Team</h3><div className="mx-auto max-w-md"><TeamMini team={pendingElim.newTeam} sideALabel={sideALabel} sideBLabel={sideBLabel}/></div></>}<button onClick={advanceElimStep} className="mt-5 rounded-2xl bg-orange-700 px-8 py-4 text-lg font-black hover:bg-orange-600">Advance</button></Card>}
 
   {screen === "winner" && teams[0] && <Card className="border-yellow-500 bg-gradient-to-br from-yellow-900/50 to-zinc-950 p-6 text-center"><h2 className="mb-4 text-4xl font-black text-yellow-300">Winning Team</h2><TeamMini team={teams[0]} sideALabel={sideALabel} sideBLabel={sideBLabel}/><div className="mx-auto mt-6 max-w-xl space-y-3 text-left"><input value={seasonTitle} onChange={(e)=>setSeasonTitle(e.target.value)} placeholder="Season title" className="w-full rounded-xl bg-zinc-900 px-4 py-3"/><textarea value={seasonSummary} onChange={(e)=>setSeasonSummary(e.target.value)} placeholder="Season summary" rows={3} className="w-full rounded-xl bg-zinc-900 px-4 py-3"/><label className="flex gap-2 font-bold"><input type="checkbox" checked={isPublicSeason} onChange={(e)=>setIsPublicSeason(e.target.checked)}/> Post publicly</label><button onClick={saveSeason} disabled={savingSeason} className="w-full rounded-2xl bg-yellow-500 px-5 py-3 font-black text-black disabled:opacity-40">{savingSeason ? "Saving..." : "Save Season"}</button></div></Card>}
 
