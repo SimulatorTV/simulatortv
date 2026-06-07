@@ -78,6 +78,13 @@ export default function SimulatorsPage() {
   buttonClass="bg-zinc-300 hover:bg-zinc-200 text-black"
 />
 
+<SimulatorCard
+  title="Redneck Island"
+  description="Spin the gun, survive the chamber, manage bullets and clip size, and play normal or tournament mode."
+  href="/simulators/redneck-island"
+  buttonText="Open Redneck Island"
+  buttonClass="bg-green-900 hover:bg-green-800 text-white"
+/>
 
           <SimulatorCard
             title="Trio"

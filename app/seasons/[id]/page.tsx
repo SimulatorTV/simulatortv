@@ -8,7 +8,7 @@ import Link from "next/link";
 import Navbar from "../../../components/Navbar";
 import EventScreen from "../../../components/survivor/EventScreen";
 import BigBrotherReplayScreen from "../../../components/big-brother/BigBrotherReplayScreen";
-import BattleOfTheShowsReplayScreen from "../../../components/battle-of-the-shows/BattleOfTheShowsReplayScreen";
+import RedneckIslandReplayScreen from "../../../components/redneck-island/RedneckIslandReplayScreen";
 import { supabase } from "../../../lib/supabase";
 
 function getPlayersFromEntry(entry: any) {
@@ -606,9 +606,9 @@ export default function SavedSeasonReplayPage() {
     season?.simulator_type?.toLowerCase().includes("big-brother") ||
     season?.simulator_type?.toLowerCase().includes("big brother");
 
-  const isBattleOfTheShows =
-    season?.simulator_type?.toLowerCase().includes("battle-of-the-shows") ||
-    season?.simulator_type?.toLowerCase().includes("battle of the shows");
+  const isRedneckIsland =
+    season?.simulator_type?.toLowerCase().includes("redneck-island") ||
+    season?.simulator_type?.toLowerCase().includes("redneck island");
 
   const timeline = season?.data_json?.season || [];
   const bigBrotherRounds = season?.data_json?.seasonFlow?.rounds || [];
@@ -622,14 +622,13 @@ export default function SavedSeasonReplayPage() {
       );
     }
 
-    if (isBattleOfTheShows) {
-      const startingTeams = season?.data_json?.startingTeams || season?.data_json?.history?.[0]?.teams || [];
-      return shufflePlayers(startingTeams.flatMap((team) => team.players || []));
+    if (isRedneckIsland) {
+      return shufflePlayers(season?.data_json?.startingCast || []);
     }
 
     const firstEntry = timeline[0];
     return shufflePlayers(getPlayersFromEntry(firstEntry));
-  }, [season, timeline, isBigBrother, isBattleOfTheShows, bigBrotherRounds]);
+  }, [season, timeline, isBigBrother, isRedneckIsland, bigBrotherRounds]);
 
   const alreadyLiked = likes.some((like) => like.user_id === currentUserId);
 
@@ -685,9 +684,9 @@ export default function SavedSeasonReplayPage() {
     );
   }
 
-  if (started && isBattleOfTheShows) {
+  if (started && isRedneckIsland) {
     return (
-      <BattleOfTheShowsReplayScreen
+      <RedneckIslandReplayScreen
         history={season?.data_json?.history || []}
         winner={season?.data_json?.winner}
         onExit={() => {
@@ -800,7 +799,7 @@ export default function SavedSeasonReplayPage() {
               disabled={
                 isBigBrother
                   ? !bigBrotherRounds.length
-                  : isBattleOfTheShows
+                  : isRedneckIsland
                     ? !(season?.data_json?.history?.length)
                     : !timeline.length
               }
