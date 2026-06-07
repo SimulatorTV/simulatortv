@@ -365,6 +365,39 @@ export default function RedneckIslandSimulator() {
   function getPlayerTeamColor(playerId) { return teams.find((t) => t.players.some((p) => p.id === playerId))?.color?.hex || "#f8f8f8"; }
   function teamPlacement(teamId) { const index = rankedTeams.findIndex((t) => t.id === teamId); return index === -1 ? null : index + 1; }
   function currentVoteCounts() { const counts = {}; voteLog.forEach((v) => { if (revealedVotes.includes(v.index)) counts[v.team.id] = (counts[v.team.id] || 0) + 1; }); return counts; }
+
+  function orderedVoteLogByChallengeRank() {
+    return [...voteLog].sort((a, b) => {
+      const teamA = teams.find((team) => team.players.some((player) => player.id === a.voter.id));
+      const teamB = teams.find((team) => team.players.some((player) => player.id === b.voter.id));
+      const placeA = teamPlacement(teamA?.id) || 999;
+      const placeB = teamPlacement(teamB?.id) || 999;
+      return placeA - placeB;
+    });
+  }
+
+  function teamPlacementBadge(team) {
+    if (!team || !winningTeam || !lastPlaceTeam) return null;
+
+    if (team.id === winningTeam.id) {
+      return (
+        <div className="mt-2 rounded-full bg-green-500 px-3 py-1 text-xs font-black uppercase text-black">
+          Immune
+        </div>
+      );
+    }
+
+    if (team.id === lastPlaceTeam.id) {
+      return (
+        <div className="mt-2 rounded-full bg-red-600 px-3 py-1 text-xs font-black uppercase text-white">
+          Last Place
+        </div>
+      );
+    }
+
+    return null;
+  }
+
   function isFinaleChallenge() { return rankedTeams.length > 0 && rankedTeams.length <= finaleTeams; }
   function revealAllVotes() { setRevealedVotes(voteLog.map((v) => v.index)); }
   function renderMatchup(index, showResult) {
@@ -418,7 +451,7 @@ export default function RedneckIslandSimulator() {
 
   {screen === "challenge" && <Card className="p-5"><h2 className="mb-3 text-3xl font-black">{teams.length <= finaleTeams ? "Finale Challenge Results" : "Challenge Results"}</h2>{rankedTeams.length === 3 && rankedTeams.length > finaleTeams ? <div className="mb-4 font-black text-yellow-300">Final 3 teams: winners are safe. The other teams go straight to elimination.</div> : null}<div className="space-y-4">{rankedTeams.map((t,i)=><div key={t.id} className="rounded-3xl border-4 p-3" style={{background:t.color.hex,color:textForBg(t.color.hex),borderColor:darken(t.color.hex)}}><div className="flex flex-wrap items-center justify-center gap-4"><span className="text-2xl font-black">#{i+1}</span><TeamMini team={t} sideALabel={sideALabel} sideBLabel={sideBLabel} compact/>{i===0 && <b className="rounded-full bg-green-500 px-3 py-1 text-black">{teams.length <= finaleTeams ? "Winners" : "Immune"}</b>}{i===rankedTeams.length-1 && teams.length > finaleTeams && rankedTeams.length > 3 && <b className="rounded-full bg-red-600 px-3 py-1 text-white">Last Place</b>}</div></div>)}</div>{teams.length <= finaleTeams ? <button onClick={() => { setTeams([rankedTeams[0]]); setScreen("winner"); record("winner", { teams:[rankedTeams[0]], winner: rankedTeams[0], sideALabel, sideBLabel }); }} className="mt-5 rounded-2xl bg-orange-700 px-8 py-4 text-lg font-black hover:bg-orange-600">Crown Winners</button> : rankedTeams.length === 3 ? <button onClick={runThreeTeamElimination} className="mt-5 rounded-2xl bg-orange-700 px-8 py-4 text-lg font-black hover:bg-orange-600">Advance To Elimination</button> : <button onClick={runVote} className="mt-5 rounded-2xl bg-orange-700 px-8 py-4 text-lg font-black hover:bg-orange-600">Advance To Vote</button>}</Card>}
 
-  {screen === "vote" && <Card className="p-5"><h2 className="text-3xl font-black">House Vote</h2><p className="mt-2 text-zinc-400">{voteLog[0]?.note}</p><div className="my-4 flex flex-wrap justify-center gap-2">{teams.filter((t) => winningTeam && lastPlaceTeam && t.id !== winningTeam.id && t.id !== lastPlaceTeam.id).map((t) => <div key={t.id} className="rounded-full border border-zinc-700 bg-zinc-900 px-4 py-2 font-black"><span className="mr-2 inline-block h-5 w-5 rounded" style={{ background: t.color.hex }} />{currentVoteCounts()[t.id] || 0}</div>)}</div><button onClick={revealAllVotes} className="mb-5 rounded-xl bg-zinc-800 px-4 py-2 font-black hover:bg-zinc-700">Reveal All Votes</button><div className="grid gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">{voteLog.map((v) => { const shown = revealedVotes.includes(v.index); const voterTeam = teams.find((t) => t.players.some((p) => p.id === v.voter.id)); return <div key={v.index} className="rounded-2xl border-4 p-3 text-center" style={{background:voterTeam?.color.hex,color:textForBg(voterTeam?.color.hex),borderColor:darken(voterTeam?.color.hex)}}><div className="font-black">#{teamPlacement(voterTeam?.id) || ""}</div><PlayerCard player={v.voter} small teamColor={voterTeam?.color.hex}/>{!shown ? <><div className="my-3 rounded-xl bg-black/70 p-3 text-white">Vote Hidden</div><button onClick={() => setRevealedVotes((cur) => cur.includes(v.index) ? cur : [...cur, v.index])} className="rounded-xl bg-white px-3 py-2 font-black text-black">Reveal Vote</button></> : <div className="mt-3 rounded-xl border-4 p-3" style={{background:v.team.color.hex,color:textForBg(v.team.color.hex),borderColor:darken(v.team.color.hex)}}><b>Voted For</b><CompactVoteTeam team={v.team} /></div>}</div>; })}</div>{revealedVotes.length === voteLog.length && <div className="mt-5"><h3 className="mb-3 text-2xl font-black">Team Voted Into Elimination</h3><TeamMini team={votedTeam} sideALabel={sideALabel} sideBLabel={sideBLabel}/><button onClick={runElimination} className="mt-5 rounded-2xl bg-orange-700 px-8 py-4 text-lg font-black hover:bg-orange-600">Advance To Elimination</button></div>}</Card>}
+  {screen === "vote" && <Card className="p-5"><h2 className="text-3xl font-black">House Vote</h2><p className="mt-2 text-zinc-400">{voteLog[0]?.note}</p><div className="my-4 flex flex-wrap justify-center gap-2">{rankedTeams.filter((t) => winningTeam && lastPlaceTeam && t.id !== winningTeam.id && t.id !== lastPlaceTeam.id).map((t) => <div key={t.id} className="rounded-full border border-zinc-700 bg-zinc-900 px-4 py-2 font-black"><span className="mr-2 inline-block h-5 w-5 rounded" style={{ background: t.color.hex }} />#{teamPlacement(t.id)} • {currentVoteCounts()[t.id] || 0}</div>)}</div><button onClick={revealAllVotes} className="mb-5 rounded-xl bg-zinc-800 px-4 py-2 font-black hover:bg-zinc-700">Reveal All Votes</button><div className="grid gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">{orderedVoteLogByChallengeRank().map((v) => { const shown = revealedVotes.includes(v.index); const voterTeam = teams.find((t) => t.players.some((p) => p.id === v.voter.id)); return <div key={v.index} className="rounded-2xl border-4 p-3 text-center" style={{background:voterTeam?.color.hex,color:textForBg(voterTeam?.color.hex),borderColor:darken(voterTeam?.color.hex)}}><div className="font-black">#{teamPlacement(voterTeam?.id) || ""}</div>{teamPlacementBadge(voterTeam)}<div className="mt-2 flex justify-center"><PlayerCard player={v.voter} small teamColor={voterTeam?.color.hex}/></div>{!shown ? <><div className="my-3 rounded-xl bg-black/70 p-3 text-white">Vote Hidden</div><button onClick={() => setRevealedVotes((cur) => cur.includes(v.index) ? cur : [...cur, v.index])} className="rounded-xl bg-white px-3 py-2 font-black text-black">Reveal Vote</button></> : <div className="mt-3 rounded-xl border-4 p-3" style={{background:v.team.color.hex,color:textForBg(v.team.color.hex),borderColor:darken(v.team.color.hex)}}><b>Voted For</b><CompactVoteTeam team={v.team} /></div>}</div>; })}</div>{revealedVotes.length === voteLog.length && <div className="mt-5"><h3 className="mb-3 text-2xl font-black">Team Voted Into Elimination</h3><TeamMini team={votedTeam} sideALabel={sideALabel} sideBLabel={sideBLabel}/><button onClick={runElimination} className="mt-5 rounded-2xl bg-orange-700 px-8 py-4 text-lg font-black hover:bg-orange-600">Advance To Elimination</button></div>}</Card>}
 
   {screen === "elim" && pendingElim && <Card className="p-5"><h2 className="mb-4 text-3xl font-black">{pendingElim.finalist ? "Finale Elimination" : "Elimination"}</h2>{elimStep === "matchups" && <><h3 className="text-2xl font-black">Matchups</h3>{renderMatchup(0,false)}{renderMatchup(1,false)}</>}{elimStep === "matchup1" && <><h3 className="text-2xl font-black">Matchup 1</h3>{renderMatchup(0,false)}</>}{elimStep === "result1" && <><h3 className="text-2xl font-black">Matchup 1 Result</h3>{renderMatchup(0,true)}</>}{elimStep === "matchup2" && <><h3 className="text-2xl font-black">Matchup 2</h3>{renderMatchup(1,false)}</>}{elimStep === "result2" && <><h3 className="text-2xl font-black">Matchup 2 Result</h3>{renderMatchup(1,true)}</>}{elimStep === "winnersSeparate" && <><h3 className="text-2xl font-black">Winners Before Combining</h3><div className="mx-auto grid max-w-2xl gap-4 sm:grid-cols-2">{pendingElim.separatePreviewTeams.map((t) => <TeamMini key={t.id} team={t} sideALabel={sideALabel} sideBLabel={sideBLabel}/>)}</div></>}{elimStep === "combined" && <><h3 className="text-2xl font-black">New Combined Team</h3><div className="mx-auto max-w-md"><TeamMini team={pendingElim.newTeam} sideALabel={sideALabel} sideBLabel={sideBLabel}/></div></>}<button onClick={advanceElimStep} className="mt-5 rounded-2xl bg-orange-700 px-8 py-4 text-lg font-black hover:bg-orange-600">Advance</button></Card>}
 
