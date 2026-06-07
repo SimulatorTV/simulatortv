@@ -89,13 +89,199 @@ function Avatar({ player, size = "md", disabled = false }) {
   const sizes = { sm: "h-10 w-10", md: "h-16 w-16", lg: "h-24 w-24" };
   return (
     <img
-      src={player.img}
+      src={player.img || player.image || player.image_url || ""}
       alt={player.name}
       className={`${sizes[size]} rounded-2xl object-cover ring-2 ring-white/60 ${disabled ? "grayscale opacity-40" : ""}`}
       onError={(e) => { e.currentTarget.src = `https://placehold.co/200x200?text=${encodeURIComponent(player.name)}`; }}
     />
   );
 }
+
+
+function AddCastMembersModal({
+  casts,
+  modalCastId,
+  modalContestants,
+  modalSelectedIds,
+  loadingCasts,
+  loadingContestants,
+  onClose,
+  onChooseCast,
+  onToggleContestant,
+  onSelectAll,
+  onSelectNone,
+  onAddSelected,
+}) {
+  const officialCasts = casts.filter((cast) => cast.is_official);
+  const customCasts = casts.filter((cast) => !cast.is_official);
+  const firstCastId = casts[0]?.id || "";
+
+  useEffect(() => {
+    if (!modalCastId && firstCastId) onChooseCast(firstCastId);
+  }, [modalCastId, firstCastId]);
+
+  function CastButton({ cast }) {
+    return (
+      <button
+        type="button"
+        onClick={() => onChooseCast(cast.id)}
+        className={`w-full rounded-2xl px-4 py-3 text-left font-black ${
+          modalCastId === cast.id
+            ? "bg-emerald-500 text-white"
+            : "bg-slate-950 text-white hover:bg-slate-900"
+        }`}
+      >
+        <div>{cast.name}</div>
+        <div className="text-xs font-bold opacity-70">
+          {cast.show_name || (cast.is_official ? "Official Cast" : "Custom Cast")}
+        </div>
+      </button>
+    );
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-3">
+      <div className="flex max-h-[90vh] w-full max-w-6xl flex-col overflow-hidden rounded-3xl border border-white/10 bg-slate-950 shadow-2xl">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 p-4">
+          <div>
+            <h2 className="text-3xl font-black text-white">Add Cast Members</h2>
+            <p className="text-sm text-slate-300">
+              Pick individual contestants from custom casts or favorited official casts.
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-2xl bg-white/10 px-4 py-2 font-black text-white hover:bg-white/20"
+          >
+            Close
+          </button>
+        </div>
+
+        <div className="grid min-h-0 flex-1 overflow-hidden md:grid-cols-[320px_1fr]">
+          <div className="space-y-4 overflow-auto border-r border-white/10 p-4">
+            {loadingCasts ? (
+              <div className="rounded-2xl border border-white/10 bg-black/30 p-4 text-slate-300">
+                Loading casts...
+              </div>
+            ) : casts.length === 0 ? (
+              <div className="rounded-2xl border border-rose-300/40 bg-rose-500/15 p-4 text-rose-100">
+                No casts available yet.
+              </div>
+            ) : (
+              <>
+                {officialCasts.length > 0 && (
+                  <div>
+                    <div className="mb-2 text-xs font-black uppercase tracking-widest text-slate-400">
+                      Favorite Official Casts
+                    </div>
+                    <div className="space-y-2">
+                      {officialCasts.map((cast) => <CastButton key={cast.id} cast={cast} />)}
+                    </div>
+                  </div>
+                )}
+
+                {customCasts.length > 0 && (
+                  <div>
+                    <div className="mb-2 text-xs font-black uppercase tracking-widest text-slate-400">
+                      Custom Casts
+                    </div>
+                    <div className="space-y-2">
+                      {customCasts.map((cast) => <CastButton key={cast.id} cast={cast} />)}
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+
+          <div className="overflow-auto p-4">
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h3 className="text-2xl font-black text-white">Contestants</h3>
+                <p className="text-sm text-slate-300">{modalSelectedIds.size} selected</p>
+              </div>
+
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={onSelectAll}
+                  className="rounded-2xl bg-white/10 px-4 py-2 font-black text-white hover:bg-white/20"
+                >
+                  Select All
+                </button>
+
+                <button
+                  type="button"
+                  onClick={onSelectNone}
+                  className="rounded-2xl bg-white/10 px-4 py-2 font-black text-white hover:bg-white/20"
+                >
+                  Select None
+                </button>
+
+                <button
+                  type="button"
+                  onClick={onAddSelected}
+                  disabled={modalSelectedIds.size === 0}
+                  className="rounded-2xl bg-emerald-500 px-4 py-2 font-black text-white hover:bg-emerald-400 disabled:opacity-40"
+                >
+                  Add Selected
+                </button>
+              </div>
+            </div>
+
+            {loadingContestants ? (
+              <div className="rounded-2xl border border-white/10 bg-black/30 p-6 text-slate-300">
+                Loading contestants...
+              </div>
+            ) : modalContestants.length === 0 ? (
+              <div className="rounded-2xl border border-white/10 bg-black/30 p-6 text-slate-300">
+                No contestants found for this cast.
+              </div>
+            ) : (
+              <div className="grid grid-cols-3 gap-3 sm:grid-cols-4 md:grid-cols-6">
+                {modalContestants.map((person) => {
+                  const active = modalSelectedIds.has(person.id);
+
+                  return (
+                    <button
+                      key={person.id}
+                      type="button"
+                      onClick={() => onToggleContestant(person.id)}
+                      className={`relative aspect-square overflow-hidden rounded-2xl border ${
+                        active
+                          ? "border-emerald-300 ring-2 ring-emerald-300/60"
+                          : "border-white/10 opacity-45 grayscale"
+                      }`}
+                    >
+                      {person.image_url ? (
+                        <img
+                          src={person.image_url}
+                          className="h-full w-full object-cover"
+                          alt={person.name}
+                        />
+                      ) : (
+                        <div className="grid h-full w-full place-items-center bg-slate-900 p-1 text-center text-xs font-black text-slate-400">
+                          No Image
+                        </div>
+                      )}
+
+                      <div className="absolute bottom-0 left-0 right-0 truncate bg-black/75 px-1 py-1 text-center text-xs font-black text-white">
+                        {person.name}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 
 function PlayingCard({ card, small = false, back = false }) {
   const size = small ? "h-12 w-9 rounded-lg" : "h-24 w-16 rounded-2xl";
@@ -1573,6 +1759,11 @@ export default function CardGameEliminationSimulator() {
   const [castPool, setCastPool] = useState([]);
   const [selected, setSelected] = useState(new Set());
   const [loadingCasts, setLoadingCasts] = useState(true);
+  const [showAddCastModal, setShowAddCastModal] = useState(false);
+  const [modalCastId, setModalCastId] = useState("");
+  const [modalContestants, setModalContestants] = useState([]);
+  const [modalSelectedIds, setModalSelectedIds] = useState(() => new Set());
+  const [loadingModalContestants, setLoadingModalContestants] = useState(false);
   const [challenges, setChallenges] = useState(makeChallengeSettings());
   const [elims, setElims] = useState(makeEliminationSettings());
   const [phase, setPhase] = useState("setup");
@@ -1640,33 +1831,62 @@ export default function CardGameEliminationSimulator() {
     setLoadingCasts(false);
   }
 
-  async function addCastToRoster(castId) {
+  async function openAddCastModal() {
+    setShowAddCastModal(true);
+
+    if (!modalCastId && savedCasts.length > 0) {
+      await loadContestantsForModal(savedCasts[0].id);
+    }
+  }
+
+  async function loadContestantsForModal(castId) {
     if (!castId) return;
+
+    setModalCastId(castId);
+    setModalSelectedIds(new Set());
+    setLoadingModalContestants(true);
 
     const { data, error } = await supabase
       .from("contestants")
-      .select("id, name, image_url")
+      .select("id, name, image_url, cast_id")
       .eq("cast_id", castId)
       .order("created_at", { ascending: true });
 
     if (error) {
       alert(error.message);
+      setLoadingModalContestants(false);
       return;
     }
 
-    const additions = (data || []).map((person) => ({
-      id: `${castId}-${person.id}`,
+    setModalContestants(data || []);
+    setLoadingModalContestants(false);
+  }
+
+  function addSelectedContestantsToRoster() {
+    const selectedPeople = modalContestants.filter((person) => modalSelectedIds.has(person.id));
+
+    if (selectedPeople.length === 0) return;
+
+    const additions = selectedPeople.map((person) => ({
+      id: `${person.cast_id || modalCastId}-${person.id}`,
       name: person.name,
       img: person.image_url || "",
-      sourceCastId: castId,
+      sourceCastId: person.cast_id || modalCastId,
     }));
 
     setCastPool((current) => {
-      const existing = new Set(current.map((player) => player.name));
-      const next = [...current, ...additions.filter((player) => !existing.has(player.name))];
+      const existing = new Set(current.map((player) => player.id || player.name));
+      const next = [
+        ...current,
+        ...additions.filter((player) => !existing.has(player.id || player.name)),
+      ];
+
       setSelected(new Set(next.map((player) => player.name)));
       return next;
     });
+
+    setShowAddCastModal(false);
+    setModalSelectedIds(new Set());
   }
 
   function removeFromRoster(playerName) {
@@ -1740,7 +1960,29 @@ export default function CardGameEliminationSimulator() {
 
       <div className="mx-auto max-w-7xl space-y-4 p-3 sm:p-6">
         <Header phase={phase} count={phase === "setup" ? selected.size : players.length} out={evicted.length} round={round} />
-        {phase === "setup" && <Setup selected={selected} togglePlayer={togglePlayer} challenges={challenges} setChallenges={setChallenges} elims={elims} setElims={setElims} bottom3={bottom3} setBottom3={setBottom3} startSeason={startSeason} savedCasts={savedCasts} castPool={castPool} loadingCasts={loadingCasts} addCastToRoster={addCastToRoster} removeFromRoster={removeFromRoster} clearRoster={clearRoster} setSelected={setSelected} />}
+        {phase === "setup" && <Setup selected={selected} togglePlayer={togglePlayer} challenges={challenges} setChallenges={setChallenges} elims={elims} setElims={setElims} bottom3={bottom3} setBottom3={setBottom3} startSeason={startSeason} savedCasts={savedCasts} castPool={castPool} loadingCasts={loadingCasts} openAddCastModal={openAddCastModal} removeFromRoster={removeFromRoster} clearRoster={clearRoster} setSelected={setSelected} />}
+        {showAddCastModal && (
+          <AddCastMembersModal
+            casts={savedCasts}
+            modalCastId={modalCastId}
+            modalContestants={modalContestants}
+            modalSelectedIds={modalSelectedIds}
+            loadingCasts={loadingCasts}
+            loadingContestants={loadingModalContestants}
+            onClose={() => setShowAddCastModal(false)}
+            onChooseCast={loadContestantsForModal}
+            onToggleContestant={(id) =>
+              setModalSelectedIds((current) => {
+                const next = new Set(current);
+                next.has(id) ? next.delete(id) : next.add(id);
+                return next;
+              })
+            }
+            onSelectAll={() => setModalSelectedIds(new Set(modalContestants.map((person) => person.id)))}
+            onSelectNone={() => setModalSelectedIds(new Set())}
+            onAddSelected={addSelectedContestantsToRoster}
+          />
+        )}
         {phase === "roundStart" && <RoundStart round={round} players={players} start={startChallenge} reset={reset} />}
         {phase === "poker" && <PokerScreen state={challenge} advance={advanceChallenge} />}
         {phase === "war" && <WarScreen state={challenge} advance={advanceChallenge} />}
@@ -1797,7 +2039,7 @@ function Pool({ title, items, onClick, onMaxChange, showMax = false }) {
     </div>
   );
 }
-function Setup({ selected, togglePlayer, challenges, setChallenges, elims, setElims, bottom3, setBottom3, startSeason, savedCasts, castPool, loadingCasts, addCastToRoster, removeFromRoster, clearRoster, setSelected }) {
+function Setup({ selected, togglePlayer, challenges, setChallenges, elims, setElims, bottom3, setBottom3, startSeason, savedCasts, castPool, loadingCasts, openAddCastModal, removeFromRoster, clearRoster, setSelected }) {
   const toggleItem = (items, setter, name) => setter(items.map((x) => x.name === name ? { ...x, enabled: !x.enabled } : x));
   const updateChallengeMax = (name, value) => {
     const clean = value === "" ? "" : String(Math.max(2, Number(value) || 2));
@@ -1822,19 +2064,11 @@ function Setup({ selected, togglePlayer, challenges, setChallenges, elims, setEl
             No casts available. Favorite official casts first, or create a custom cast.
           </div>
         ) : (
-          <div className="mt-4 grid gap-2 md:grid-cols-[1fr_auto]">
-            <select
-              className="rounded-2xl border border-white/10 bg-black/30 px-4 py-3 font-black text-white"
-              onChange={(e) => addCastToRoster(e.target.value)}
-              defaultValue=""
-            >
-              <option value="" disabled>Add a cast...</option>
-              {savedCasts.map((cast) => (
-                <option key={cast.id} value={cast.id}>
-                  {cast.is_official ? "★ " : ""}{cast.name}{cast.show_name ? ` (${cast.show_name})` : ""}
-                </option>
-              ))}
-            </select>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <Button onClick={openAddCastModal}>
+              Add Cast Members
+            </Button>
+
             <Link href="/official-casts" className="rounded-2xl bg-yellow-400 px-4 py-3 text-center font-black text-slate-950 hover:bg-yellow-300">
               Favorite Official Casts
             </Link>
