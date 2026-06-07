@@ -8,6 +8,7 @@ import Link from "next/link";
 import Navbar from "../../../components/Navbar";
 import EventScreen from "../../../components/survivor/EventScreen";
 import BigBrotherReplayScreen from "../../../components/big-brother/BigBrotherReplayScreen";
+import BattleOfTheShowsReplayScreen from "../../../components/battle-of-the-shows/BattleOfTheShowsReplayScreen";
 import RedneckIslandReplayScreen from "../../../components/redneck-island/RedneckIslandReplayScreen";
 import { supabase } from "../../../lib/supabase";
 
@@ -40,8 +41,51 @@ function shufflePlayers(players) {
   return copy;
 }
 
+
+function uniquePreviewPlayers(players) {
+  const seen = new Set();
+
+  return (players || [])
+    .filter(Boolean)
+    .filter((player) => player?.image || player?.img || player?.image_url)
+    .filter((player) => {
+      const key = player.id || player.name || player.image || player.img || player.image_url;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+}
+
+function getStartingPlayersFromSavedSeason(season, timeline, bigBrotherRounds) {
+  const data = season?.data_json || {};
+  const pools = [
+    data.selectedCast,
+    data.startingCast,
+    data.players,
+    data.preview?.startingCast,
+    bigBrotherRounds?.[0]?.castGrid,
+    data.seasonFlow?.rounds?.[0]?.castGrid,
+    data.startingTeams?.flatMap((team) => team.players || []),
+    data.finalTeams?.flatMap((team) => team.players || []),
+    data.history?.[0]?.teams?.flatMap((team) => team.players || []),
+    data.history?.find((entry) => entry?.players?.length)?.players,
+    data.history?.find((entry) => entry?.teams?.length)?.teams?.flatMap((team) => team.players || []),
+    timeline?.[0]?.tribes?.flatMap((tribe) => tribe.members || []),
+    timeline?.[0]?.mergeTribe?.members,
+    timeline?.[0]?.finalists,
+  ];
+
+  for (const pool of pools) {
+    const preview = uniquePreviewPlayers(pool || []);
+    if (preview.length > 0) return preview;
+  }
+
+  return [];
+}
+
+
 function PlayerTile({ player }) {
-  const image = player.image || player.img || "";
+  const image = player.image || player.img || player.image_url || "";
 
   return (
     <div className="bg-gray-800 border border-gray-700 rounded-2xl p-3">
@@ -90,7 +134,7 @@ function ordinalLabel(index) {
 
 
 function getPlayerImage(player) {
-  return player?.image || player?.img || "";
+  return player?.image || player?.img || player?.image_url || "";
 }
 
 function MiniPlayerCard({ player, label = "" }) {
@@ -606,6 +650,10 @@ export default function SavedSeasonReplayPage() {
     season?.simulator_type?.toLowerCase().includes("big-brother") ||
     season?.simulator_type?.toLowerCase().includes("big brother");
 
+  const isBattleOfTheShows =
+    season?.simulator_type?.toLowerCase().includes("battle-of-the-shows") ||
+    season?.simulator_type?.toLowerCase().includes("battle of the shows");
+
   const isRedneckIsland =
     season?.simulator_type?.toLowerCase().includes("redneck-island") ||
     season?.simulator_type?.toLowerCase().includes("redneck island");
@@ -614,21 +662,10 @@ export default function SavedSeasonReplayPage() {
   const bigBrotherRounds = season?.data_json?.seasonFlow?.rounds || [];
 
   const startingPlayers = useMemo(() => {
-    if (isBigBrother) {
-      return shufflePlayers(
-        season?.data_json?.selectedCast ||
-          bigBrotherRounds[0]?.castGrid ||
-          []
-      );
-    }
-
-    if (isRedneckIsland) {
-      return shufflePlayers(season?.data_json?.startingCast || []);
-    }
-
-    const firstEntry = timeline[0];
-    return shufflePlayers(getPlayersFromEntry(firstEntry));
-  }, [season, timeline, isBigBrother, isRedneckIsland, bigBrotherRounds]);
+    return shufflePlayers(
+      getStartingPlayersFromSavedSeason(season, timeline, bigBrotherRounds)
+    );
+  }, [season, timeline, bigBrotherRounds]);
 
   const alreadyLiked = likes.some((like) => like.user_id === currentUserId);
 
@@ -676,6 +713,19 @@ export default function SavedSeasonReplayPage() {
       <BigBrotherReplayScreen
         seasonFlow={season?.data_json?.seasonFlow}
         headerLabel="Saved Big Brother replay"
+        onExit={() => {
+          setStarted(false);
+          setStepIndex(0);
+        }}
+      />
+    );
+  }
+
+  if (started && isBattleOfTheShows) {
+    return (
+      <BattleOfTheShowsReplayScreen
+        history={season?.data_json?.history || []}
+        winner={season?.data_json?.winner}
         onExit={() => {
           setStarted(false);
           setStepIndex(0);
@@ -799,7 +849,7 @@ export default function SavedSeasonReplayPage() {
               disabled={
                 isBigBrother
                   ? !bigBrotherRounds.length
-                  : isRedneckIsland
+                  : isBattleOfTheShows || isBattleOfTheShows || isRedneckIsland
                     ? !(season?.data_json?.history?.length)
                     : !timeline.length
               }

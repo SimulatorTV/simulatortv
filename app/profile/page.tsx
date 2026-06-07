@@ -6,6 +6,52 @@ import { useRouter } from "next/navigation";
 import { supabase } from "../../lib/supabase";
 import Navbar from "../../components/Navbar";
 
+
+function getAnyPlayerImage(player: any) {
+  return player?.image || player?.img || player?.image_url || "";
+}
+
+function uniquePreviewPlayers(players: any[]) {
+  const seen = new Set();
+
+  return (players || [])
+    .filter(Boolean)
+    .filter((player: any) => getAnyPlayerImage(player))
+    .filter((player: any) => {
+      const key = player.id || player.name || getAnyPlayerImage(player);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .slice(0, 6);
+}
+
+function getUniversalSeasonPreviewPlayers(season: any) {
+  const data = season?.data_json || {};
+
+  const pools = [
+    data.selectedCast,
+    data.startingCast,
+    data.players,
+    data.preview?.startingCast,
+    data.seasonFlow?.rounds?.[0]?.castGrid,
+    data.season?.[0]?.tribes?.flatMap((tribe: any) => tribe.members || []),
+    data.season?.[0]?.mergeTribe?.members,
+    data.startingTeams?.flatMap((team: any) => team.players || []),
+    data.finalTeams?.flatMap((team: any) => team.players || []),
+    data.history?.[0]?.teams?.flatMap((team: any) => team.players || []),
+    data.history?.find((entry: any) => entry?.players?.length)?.players,
+    data.history?.find((entry: any) => entry?.teams?.length)?.teams?.flatMap((team: any) => team.players || []),
+  ];
+
+  for (const pool of pools) {
+    const preview = uniquePreviewPlayers(pool || []);
+    if (preview.length > 0) return preview;
+  }
+
+  return [];
+}
+
 export default function ProfilePage() {
   const router = useRouter();
 
@@ -141,14 +187,7 @@ export default function ProfilePage() {
   }
 
   function getSeasonCastPreview(season: any) {
-    const firstEntry = season?.data_json?.season?.[0];
-
-    if (!firstEntry?.tribes?.length) return [];
-
-    return firstEntry.tribes
-      .flatMap((tribe: any) => tribe.members || [])
-      .filter((player: any) => player?.image)
-      .slice(0, 6);
+    return getUniversalSeasonPreviewPlayers(season);
   }
 
   if (loading) {
@@ -364,7 +403,7 @@ export default function ProfilePage() {
                               className="w-12 h-12 rounded-xl overflow-hidden border-2 border-gray-900 bg-gray-700"
                             >
                               <img
-                                src={player.image}
+                                src={getAnyPlayerImage(player)}
                                 alt={player.name}
                                 className="w-full h-full object-cover"
                               />

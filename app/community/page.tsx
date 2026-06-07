@@ -5,6 +5,51 @@ import Link from "next/link";
 import Navbar from "../../components/Navbar";
 import { supabase } from "../../lib/supabase";
 
+function getAnyPlayerImage(player: any) {
+  return player?.image || player?.img || player?.image_url || "";
+}
+
+function uniquePreviewPlayers(players: any[]) {
+  const seen = new Set();
+
+  return (players || [])
+    .filter(Boolean)
+    .filter((player: any) => getAnyPlayerImage(player))
+    .filter((player: any) => {
+      const key = player.id || player.name || getAnyPlayerImage(player);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .slice(0, 6);
+}
+
+function getUniversalSeasonPreviewPlayers(season: any) {
+  const data = season?.data_json || {};
+
+  const pools = [
+    data.selectedCast,
+    data.startingCast,
+    data.players,
+    data.preview?.startingCast,
+    data.seasonFlow?.rounds?.[0]?.castGrid,
+    data.season?.[0]?.tribes?.flatMap((tribe: any) => tribe.members || []),
+    data.season?.[0]?.mergeTribe?.members,
+    data.startingTeams?.flatMap((team: any) => team.players || []),
+    data.finalTeams?.flatMap((team: any) => team.players || []),
+    data.history?.[0]?.teams?.flatMap((team: any) => team.players || []),
+    data.history?.find((entry: any) => entry?.players?.length)?.players,
+    data.history?.find((entry: any) => entry?.teams?.length)?.teams?.flatMap((team: any) => team.players || []),
+  ];
+
+  for (const pool of pools) {
+    const preview = uniquePreviewPlayers(pool || []);
+    if (preview.length > 0) return preview;
+  }
+
+  return [];
+}
+
 export default function CommunityPage() {
   const [loading, setLoading] = useState(true);
   const [seasons, setSeasons] = useState<any[]>([]);
@@ -52,36 +97,7 @@ export default function CommunityPage() {
   }
 
   function getPreviewPlayers(season: any): any[] {
-    const type = String(season?.simulator_type || "").toLowerCase();
-
-    if (type.includes("big-brother") || type.includes("big brother")) {
-      return (
-        season?.data_json?.selectedCast ||
-        season?.data_json?.seasonFlow?.rounds?.[0]?.castGrid ||
-        []
-      )
-        .filter((player: any) => player?.image || player?.img)
-        .slice(0, 6);
-    }
-
-    if (type.includes("color")) {
-      return (
-        season?.data_json?.players ||
-        season?.data_json?.preview?.startingCast ||
-        []
-      )
-        .filter((player: any) => player?.image || player?.img)
-        .slice(0, 6);
-    }
-
-    const firstEntry = season?.data_json?.season?.[0];
-
-    if (!firstEntry?.tribes?.length) return [];
-
-    return firstEntry.tribes
-      .flatMap((tribe: any) => tribe.members || [])
-      .filter((player: any) => player?.image || player?.img)
-      .slice(0, 6);
+    return getUniversalSeasonPreviewPlayers(season);
   }
 
   if (loading) {
@@ -158,8 +174,6 @@ export default function CommunityPage() {
                       "Replay this saved simulator season."}
                   </p>
 
-                  
-
                   {previewPlayers.length > 0 && (
                     <div className="flex -space-x-3 mb-5">
                       {previewPlayers.map(
@@ -169,7 +183,7 @@ export default function CommunityPage() {
                             className="w-14 h-14 rounded-2xl overflow-hidden border-2 border-gray-900 bg-gray-700"
                           >
                             <img
-                              src={player.image || player.img}
+                              src={getAnyPlayerImage(player)}
                               alt={player.name}
                               className="w-full h-full object-cover"
                             />
