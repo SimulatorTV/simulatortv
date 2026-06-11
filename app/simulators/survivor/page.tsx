@@ -349,7 +349,7 @@ function buildVoteEntries(voters, targets, protectedIds = [], relationships = ne
         voterId: voter.id,
         voterName: voter.name,
         targetId: null,
-        targetName: voter.voteBlocked ? "Vote Blocked" : "No vote",
+        targetName: voter.voteBlocked ? "Vote Blocked" : voter.lostVoteLocked ? "Lost Vote" : "No vote",
         doesNotCount: false,
         noVote: true,
       });
@@ -507,6 +507,7 @@ function applyWeeklyPowerResult(result, players, powerType = "steal_a_vote") {
       if (powerType === "knowledge_is_power") player.hasKnowledgeIsPower = Number(player.hasKnowledgeIsPower || 0) + 1;
       if (powerType === "rock_draw") player.hasRockDrawPower = Number(player.hasRockDrawPower || 0) + 1;
     }
+    // Lost votes stack and are spent only when the player actually attends a tribal where they would vote.
     if (result.losersLoseVoteIds?.includes(player.id)) player.lostVote = Number(player.lostVote || 0) + 1;
   });
 }
@@ -645,8 +646,8 @@ function maybeUseKnowledgeIsPower(voters, players, relationships, context, playe
 
     if (success) {
       if (guessed === "hasIdol") {
-        best.hasIdol = false;
-        holder.hasIdol = true;
+        best.hasIdol = Math.max(0, Number(best.hasIdol || 0) - 1);
+        holder.hasIdol = Number(holder.hasIdol || 0) + 1;
       } else {
         best[guessed] = Math.max(0, Number(best[guessed] || 0) - 1);
         holder[guessed] = Number(holder[guessed] || 0) + 1;
@@ -842,7 +843,12 @@ function resolveVote({ voters, targets, immuneId = null, relationships = new Map
   }
 
   const realVoters = voters;
-  const workingVoters = voters.map((player) => ({ ...player, noVoteLocked: Number(player.lostVote || 0) > 0, voteBlocked: false }));
+  const workingVoters = voters.map((player) => ({
+    ...player,
+    noVoteLocked: Number(player.lostVote || 0) > 0,
+    lostVoteLocked: Number(player.lostVote || 0) > 0,
+    voteBlocked: false,
+  }));
   const safetyWithoutPowerPlay = maybeUseSafetyWithoutPower(workingVoters, relationships, playersRemaining);
   let adjustedTargets = targets;
   if (safetyWithoutPowerPlay) {
@@ -868,8 +874,8 @@ function resolveVote({ voters, targets, immuneId = null, relationships = new Map
     if (realHolder) realHolder.hasKnowledgeIsPower = Math.max(0, Number(realHolder.hasKnowledgeIsPower || 0) - 1);
     if (knowledgeIsPowerPlay.success && realHolder && realTarget) {
       if (knowledgeIsPowerPlay.guessed === "hasIdol") {
-        realTarget.hasIdol = false;
-        realHolder.hasIdol = true;
+        realTarget.hasIdol = Math.max(0, Number(realTarget.hasIdol || 0) - 1);
+        realHolder.hasIdol = Number(realHolder.hasIdol || 0) + 1;
       } else {
         realTarget[knowledgeIsPowerPlay.guessed] = Math.max(0, Number(realTarget[knowledgeIsPowerPlay.guessed] || 0) - 1);
         realHolder[knowledgeIsPowerPlay.guessed] = Number(realHolder[knowledgeIsPowerPlay.guessed] || 0) + 1;
@@ -926,7 +932,14 @@ function resolveVote({ voters, targets, immuneId = null, relationships = new Map
     const realHolder = realVoters.find((player) => player.id === stealVotePlay.byPlayerId);
     if (realHolder) realHolder.hasStealVote = Math.max(0, Number(realHolder.hasStealVote || 0) - 1);
   }
+  const consumedLostVoteIds = new Set(
+    workingVoters
+      .filter((player) => player.lostVoteLocked)
+      .map((player) => player.id)
+  );
+
   realVoters.forEach((player) => {
+    if (!consumedLostVoteIds.has(player.id)) return;
     const currentLostVote = Number(player.lostVote || 0);
     if (currentLostVote > 0) player.lostVote = currentLostVote - 1;
   });
@@ -942,7 +955,7 @@ function resolveVote({ voters, targets, immuneId = null, relationships = new Map
   const shotInDarkPlays = decideShotInTheDarkPlays(workingVoters, markedVotes, playersRemaining);
   shotInDarkPlays.forEach((play) => {
     const realPlayer = realVoters.find((player) => player.id === play.byPlayerId);
-    if (realPlayer) realPlayer.hasShotInTheDark = false;
+    if (realPlayer) realPlayer.hasShotInTheDark = Math.max(0, Number(realPlayer.hasShotInTheDark || 0) - 1);
   });
   const sitdSafeIds = shotInDarkPlays.filter((play) => play.safe).map((play) => play.byPlayerId);
   markedVotes.forEach((vote) => { if (sitdSafeIds.includes(vote.targetId)) vote.doesNotCount = true; });
@@ -963,6 +976,23 @@ function resolveVote({ voters, targets, immuneId = null, relationships = new Map
       realHolder.hasSuperIdol = Math.max(0, Number(realHolder.hasSuperIdol || 0) - 1);
     }
   }
+
+
+  realVoters.forEach((player) => {
+    [
+      "hasShotInTheDark",
+      "hasStealVote",
+      "hasSafetyWithoutPower",
+      "hasVoteBlock",
+      "hasExtraVote",
+      "hasKnowledgeIsPower",
+      "hasRockDrawPower",
+      "hasSuperIdol",
+      "lostVote",
+    ].forEach((field) => {
+      player[field] = Math.max(0, Number(player[field] || 0));
+    });
+  });
 
   return { ...finalVote, idolPlays, superIdolPlay, shotInDarkPlays, safeIds, stealVotePlay, safetyWithoutPowerPlay, voteBlockPlay, extraVotePlay, knowledgeIsPowerPlay, rockDrawPowerPlay };
 }
