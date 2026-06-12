@@ -306,6 +306,8 @@ export default function FreeAgentsSimulator() {
   const [roundNumber, setRoundNumber] = useState(0);
   const [roundData, setRoundData] = useState(null);
   const [log, setLog] = useState(["Add cast members, then press Advance to begin the first round."]);
+  const [history, setHistory] = useState([]);
+  const [lastHistoryKey, setLastHistoryKey] = useState("");
 
   const [seasonTitle, setSeasonTitle] = useState("");
   const [seasonSummary, setSeasonSummary] = useState("");
@@ -326,6 +328,27 @@ export default function FreeAgentsSimulator() {
   useEffect(() => {
     loadSavedCasts();
   }, []);
+
+
+  useEffect(() => {
+    if (phase === "pregame") return;
+    const key = `${phase}-${roundNumber}-${JSON.stringify(roundData || {})}-${players.map((p) => `${p.id}:${p.eliminated ? 1 : 0}:${p.placement || ""}`).join("|")}`;
+    if (key === lastHistoryKey) return;
+
+    setLastHistoryKey(key);
+    setHistory((prev) => [
+      ...prev,
+      {
+        phase,
+        roundNumber,
+        players: JSON.parse(JSON.stringify(players || [])),
+        roundData: JSON.parse(JSON.stringify(roundData || null)),
+        initialOrder: [...(initialOrder || [])],
+        champion: champion ? JSON.parse(JSON.stringify(champion)) : null,
+      },
+    ]);
+  }, [phase, roundNumber, roundData, players]);
+
 
   async function loadSavedCasts() {
     const { data: userData } = await supabase.auth.getUser();
@@ -429,6 +452,8 @@ export default function FreeAgentsSimulator() {
       setRoundNumber(0);
       setRoundData(null);
       setLog(["Simulator ready. Press Advance to begin the first round."]);
+      setHistory([]);
+      setLastHistoryKey("");
 
       return nextRoster;
     });
@@ -469,6 +494,8 @@ export default function FreeAgentsSimulator() {
     setRoundNumber(0);
     setRoundData(null);
     setLog(["Roster cleared. Add cast members to begin."]);
+    setHistory([]);
+    setLastHistoryKey("");
   }
 
   useEffect(() => {
@@ -501,6 +528,8 @@ export default function FreeAgentsSimulator() {
     setIsPublicSeason(true);
     setSavingSeason(false);
     setLog(["Simulator reset. Press Advance to begin the first round."]);
+    setHistory([]);
+    setLastHistoryKey("");
   }
 
   function toggleSelected(id) {
@@ -771,6 +800,7 @@ export default function FreeAgentsSimulator() {
         allow_comments: true,
         data_json: {
           simulator_type: "free-agents",
+          history,
           players,
           placements,
           champion,

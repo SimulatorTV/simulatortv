@@ -10,6 +10,7 @@ import EventScreen from "../../../components/survivor/EventScreen";
 import BigBrotherReplayScreen from "../../../components/big-brother/BigBrotherReplayScreen";
 import BattleOfTheShowsReplayScreen from "../../../components/battle-of-the-shows/BattleOfTheShowsReplayScreen";
 import RedneckIslandReplayScreen from "../../../components/redneck-island/RedneckIslandReplayScreen";
+import FreeAgentsReplayScreen from "../../../components/free-agents/FreeAgentsReplayScreen";
 import { supabase } from "../../../lib/supabase";
 
 function getPlayersFromEntry(entry: any) {
@@ -70,6 +71,8 @@ function getStartingPlayersFromSavedSeason(season, timeline, bigBrotherRounds) {
     data.history?.[0]?.teams?.flatMap((team) => team.players || []),
     data.history?.find((entry) => entry?.players?.length)?.players,
     data.history?.find((entry) => entry?.teams?.length)?.teams?.flatMap((team) => team.players || []),
+    data.placements,
+    data.champion ? [data.champion] : [],
     timeline?.[0]?.tribes?.flatMap((tribe) => tribe.members || []),
     timeline?.[0]?.mergeTribe?.members,
     timeline?.[0]?.finalists,
@@ -658,6 +661,10 @@ export default function SavedSeasonReplayPage() {
     season?.simulator_type?.toLowerCase().includes("redneck-island") ||
     season?.simulator_type?.toLowerCase().includes("redneck island");
 
+  const isFreeAgents =
+    season?.simulator_type?.toLowerCase().includes("free-agents") ||
+    season?.simulator_type?.toLowerCase().includes("free agents");
+
   const timeline = season?.data_json?.season || [];
   const bigBrotherRounds = season?.data_json?.seasonFlow?.rounds || [];
 
@@ -726,6 +733,19 @@ export default function SavedSeasonReplayPage() {
       <BattleOfTheShowsReplayScreen
         history={season?.data_json?.history || []}
         winner={season?.data_json?.winner}
+        onExit={() => {
+          setStarted(false);
+          setStepIndex(0);
+        }}
+      />
+    );
+  }
+
+  if (started && isFreeAgents) {
+    return (
+      <FreeAgentsReplayScreen
+        history={season?.data_json?.history || []}
+        winner={season?.data_json?.champion}
         onExit={() => {
           setStarted(false);
           setStepIndex(0);
@@ -849,7 +869,7 @@ export default function SavedSeasonReplayPage() {
               disabled={
                 isBigBrother
                   ? !bigBrotherRounds.length
-                  : isBattleOfTheShows || isBattleOfTheShows || isRedneckIsland
+                  : isBattleOfTheShows || isBattleOfTheShows || isRedneckIsland || isFreeAgents
                     ? !(season?.data_json?.history?.length)
                     : !timeline.length
               }
