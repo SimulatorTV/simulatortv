@@ -385,7 +385,7 @@ function AddCastMembersModal({
   );
 }
 
-function PlayerCard({ player, eliminated, compact, status, highlightStyle = null }) {
+function PlayerCard({ player, eliminated, compact, tiny, status, highlightStyle = null }) {
   if (!player) return null;
   const image = getImage(player);
 
@@ -395,7 +395,7 @@ function PlayerCard({ player, eliminated, compact, status, highlightStyle = null
         borderRadius: 12,
         padding: 8,
         position: "relative",
-        width: compact ? 120 : 150,
+        width: tiny ? 70 : compact ? 120 : 150,
         border:
           highlightStyle?.borderColor
             ? `4px solid ${highlightStyle.borderColor}`
@@ -421,7 +421,7 @@ function PlayerCard({ player, eliminated, compact, status, highlightStyle = null
           alt={player.name}
           style={{
             width: "100%",
-            height: compact ? 110 : 145,
+            height: tiny ? 64 : compact ? 110 : 145,
             objectFit: "cover",
             borderRadius: 8,
             filter: eliminated || status === "lose" ? "grayscale(1)" : "none",
@@ -432,10 +432,10 @@ function PlayerCard({ player, eliminated, compact, status, highlightStyle = null
           No Image
         </div>
       )}
-      <div style={{ fontWeight: "bold", marginTop: 8 }}>{player.name}</div>
-      {status === "win" && <div style={styles.winText}>WINNER</div>}
-      {status === "lose" && <div style={styles.loseText}>ELIMINATED</div>}
-      {eliminated && !status && <div style={styles.loseText}>ELIMINATED</div>}
+      <div style={{ fontWeight: "bold", marginTop: tiny ? 4 : 8, fontSize: tiny ? 10 : undefined, lineHeight: tiny ? 1.05 : undefined }}>{player.name}</div>
+      {status === "win" && !tiny && <div style={styles.winText}>WINNER</div>}
+      {status === "lose" && !tiny && <div style={styles.loseText}>ELIMINATED</div>}
+      {eliminated && !status && !tiny && <div style={styles.loseText}>ELIMINATED</div>}
     </div>
   );
 }
@@ -648,7 +648,7 @@ export default function CallOutSimulator() {
 
     if (active.length === 2) {
       const [a, b] = active;
-      const nextMatches = [{ sentInId: a.id, voterIds: [], unavailableVoterIds: [], eligibleCallOutIds: [b.id], callOutId: b.id, callOutRevealed: true }];
+      const nextMatches = [{ sentInId: a.id, voterIds: [], unavailableVoterIds: [], eligibleCallOutIds: [b.id], callOutId: b.id, safe: false, callOutRevealed: true }];
       setMatches(nextMatches);
       setMatchIndex(0);
       setScreen("elimination");
@@ -707,7 +707,7 @@ export default function CallOutSimulator() {
     const highest = Math.max(...Object.values(counts));
     const sentInIds = Object.entries(counts).filter(([, count]) => count === highest).map(([id]) => id);
 
-    if (sentInIds.length > 5 || sentInIds.length >= active.length) {
+    if (sentInIds.length > Math.floor(active.length / 2)) {
       const nextVotes = generateVotes(active);
       setVotes(nextVotes);
       addHistory("votes", players, alliances, nextVotes, [], 0);
@@ -721,11 +721,21 @@ export default function CallOutSimulator() {
       const allVotersAgainstThem = votes.filter((v) => v.targetId === sentInId).map((v) => v.voterId);
       const unavailableVoterIds = allVotersAgainstThem.filter((id) => alreadyInElimination.has(id));
       const eligibleCallOutIds = allVotersAgainstThem.filter((id) => !alreadyInElimination.has(id));
-      const fallback = active.filter((p) => p.id !== sentInId && !alreadyInElimination.has(p.id)).map((p) => p.id);
-      const finalEligible = eligibleCallOutIds.length > 0 ? eligibleCallOutIds : fallback;
+      const finalEligible = eligibleCallOutIds;
       const callOutId = finalEligible.length > 0 ? rand(finalEligible) : null;
+      const safe = finalEligible.length === 0;
+
       if (callOutId) alreadyInElimination.add(callOutId);
-      newMatches.push({ sentInId, voterIds: allVotersAgainstThem, unavailableVoterIds, eligibleCallOutIds: finalEligible, callOutId, callOutRevealed: false });
+
+      newMatches.push({
+        sentInId,
+        voterIds: allVotersAgainstThem,
+        unavailableVoterIds,
+        eligibleCallOutIds: finalEligible,
+        callOutId,
+        safe,
+        callOutRevealed: safe ? true : false,
+      });
     });
 
     setMatches(newMatches);
@@ -741,13 +751,40 @@ export default function CallOutSimulator() {
   }
 
   function advanceFromCallOut() {
+    const match = matches[matchIndex];
+
+    if (match?.safe) {
+      if (matchIndex < matches.length - 1) {
+        const nextIndex = matchIndex + 1;
+        setMatchIndex(nextIndex);
+        setScreen("callout");
+        addHistory("callout", players, alliances, votes, matches, nextIndex);
+        return;
+      }
+
+      const remainingAfterRound = players.filter((p) => !p.eliminated);
+
+      if (remainingAfterRound.length <= 1) {
+        setScreen("winner");
+        addHistory("winner", players, alliances, votes, matches, matchIndex);
+      } else {
+        setRound((r) => r + 1);
+        setVotes([]);
+        setMatches([]);
+        setMatchIndex(0);
+        setScreen("cast");
+      }
+
+      return;
+    }
+
     setScreen("elimination");
     addHistory("elimination", players, alliances, votes, matches, matchIndex);
   }
 
   function revealEliminationResult() {
     const match = matches[matchIndex];
-    if (!match || !match.callOutId) return;
+    if (!match || match.safe || !match.callOutId) return;
     const winnerId = Math.random() < 0.5 ? match.sentInId : match.callOutId;
     const loserId = winnerId === match.sentInId ? match.callOutId : match.sentInId;
     const nextMatches = matches.map((m, i) => i === matchIndex ? { ...m, winnerId, loserId, resultRevealed: true } : m);
@@ -857,23 +894,30 @@ export default function CallOutSimulator() {
       {screen === "cast" && (
         <>
           <h2>Cast Remaining: {active.length}</h2>
+
+          <div style={styles.topButtonRow}>
+            <button style={styles.button} onClick={startRound} disabled={active.length < 2}>Advance</button>
+          </div>
+
           {players.length === 0 ? <div style={styles.emptyBox}>Add cast members to begin.</div> : (
-            <div style={styles.grid}>
+            <div style={styles.castGridSmall}>
               {players.map((p) => (
                 <div key={p.id} style={{ position: "relative" }}>
-                  <PlayerCard player={p} eliminated={!!p.eliminated} />
-                  {round === 1 && !votes.length && !matches.length && <button style={styles.removeButton} onClick={() => removePlayer(p.id)}>×</button>}
+                  <PlayerCard player={p} eliminated={!!p.eliminated} tiny />
+                  {round === 1 && !votes.length && !matches.length && <button style={styles.removeButtonSmall} onClick={() => removePlayer(p.id)}>×</button>}
                 </div>
               ))}
             </div>
           )}
-          <button style={styles.button} onClick={startRound} disabled={active.length < 2}>Advance</button>
         </>
       )}
 
       {screen === "alliances" && (
         <>
           <h2>Alliances</h2>
+          <div style={styles.topButtonRow}>
+            <button style={styles.button} onClick={advanceFromAlliances}>Advance to Votes</button>
+          </div>
           {alliances.length === 0 && <h3>No alliances this round</h3>}
           <div style={styles.allianceGrid}>
             {alliances.map((alliance, i) => (
@@ -883,13 +927,17 @@ export default function CallOutSimulator() {
               </div>
             ))}
           </div>
-          <button style={styles.button} onClick={advanceFromAlliances}>Advance to Votes</button>
         </>
       )}
 
       {screen === "votes" && (
         <>
           <h2>Vote Reveal</h2>
+
+          <div style={styles.topButtonRow}>
+            <button style={styles.button} onClick={revealAllVotes}>Reveal All</button>
+            <button style={styles.button} onClick={advanceFromVotes}>Advance</button>
+          </div>
 
           <div style={styles.liveCountGrid}>
             {voteCountEntries.length === 0 ? (
@@ -918,15 +966,22 @@ export default function CallOutSimulator() {
               );
             })}
           </div>
-
-          <button style={styles.button} onClick={revealAllVotes}>Reveal All</button>
-          <button style={styles.button} onClick={advanceFromVotes}>Advance</button>
         </>
       )}
 
       {screen === "callout" && currentMatch && (
         <>
           <h2>Call Out {matchIndex + 1} of {matches.length}</h2>
+
+          <div style={styles.topButtonRow}>
+            <button
+              style={{ ...styles.button, opacity: currentMatch.callOutRevealed || currentMatch.safe ? 1 : 0.5 }}
+              onClick={currentMatch.callOutRevealed || currentMatch.safe ? advanceFromCallOut : undefined}
+            >
+              {currentMatch.safe ? "Advance - Safe" : "Advance to Elimination"}
+            </button>
+          </div>
+
           <h3>People who voted them in</h3>
           <div style={styles.topLine}>
             {currentMatch.voterIds.map((id) => {
@@ -942,26 +997,42 @@ export default function CallOutSimulator() {
               );
             })}
           </div>
+
+          {currentMatch.safe && (
+            <div style={styles.safeBox}>
+              SAFE
+              <div style={styles.safeSubtext}>
+                Everyone who voted for them is already in another elimination.
+              </div>
+            </div>
+          )}
+
           <h3>Voted Into Elimination</h3>
           <div style={styles.callOutMain}>
             <PlayerCard player={getPlayer(players, currentMatch.sentInId)} compact />
-            <button style={styles.revealBox} onClick={revealCallOut}>
-              {currentMatch.callOutRevealed && currentMatch.callOutId ? <div style={styles.revealedVote}><img src={getImage(getPlayer(players, currentMatch.callOutId))} style={styles.voteImg} /><strong>{getPlayer(players, currentMatch.callOutId)?.name}</strong></div> : "?"}
-            </button>
+
+            {!currentMatch.safe && (
+              <button style={styles.revealBox} onClick={revealCallOut}>
+                {currentMatch.callOutRevealed && currentMatch.callOutId ? <div style={styles.revealedVote}><img src={getImage(getPlayer(players, currentMatch.callOutId))} style={styles.voteImg} /><strong>{getPlayer(players, currentMatch.callOutId)?.name}</strong></div> : "?"}
+              </button>
+            )}
           </div>
-          <button style={{ ...styles.button, opacity: currentMatch.callOutRevealed ? 1 : 0.5 }} onClick={currentMatch.callOutRevealed ? advanceFromCallOut : undefined}>Advance to Elimination</button>
         </>
       )}
 
       {screen === "elimination" && currentMatch && (
         <>
           <h2>Elimination {matchIndex + 1} of {matches.length}</h2>
+
+          <div style={styles.topButtonRow}>
+            <button style={styles.button} onClick={advanceFromElimination}>{currentMatch.resultRevealed ? "Advance" : "Reveal Result"}</button>
+          </div>
+
           <div style={styles.duelRow}>
             <PlayerCard player={getPlayer(players, currentMatch.sentInId)} compact status={currentMatch.resultRevealed ? currentMatch.winnerId === currentMatch.sentInId ? "win" : "lose" : undefined} />
             <strong style={styles.vs}>VS</strong>
             <PlayerCard player={getPlayer(players, currentMatch.callOutId)} compact status={currentMatch.resultRevealed ? currentMatch.winnerId === currentMatch.callOutId ? "win" : "lose" : undefined} />
           </div>
-          <button style={styles.button} onClick={advanceFromElimination}>{currentMatch.resultRevealed ? "Advance" : "Reveal Result"}</button>
         </>
       )}
 
@@ -990,6 +1061,8 @@ const styles = {
   subtitle: { marginTop: 6, color: "#ddd" },
   emptyBox: { background: "#1f1f1f", border: "2px dashed #555", borderRadius: 16, padding: 28, maxWidth: 700, margin: "20px auto", color: "#ddd", fontWeight: 900 },
   grid: { display: "flex", flexWrap: "wrap", justifyContent: "center", gap: 14, marginTop: 20 },
+  castGridSmall: { display: "grid", gridTemplateColumns: "repeat(14, 70px)", justifyContent: "center", gap: 8, marginTop: 18 },
+  topButtonRow: { display: "flex", justifyContent: "center", alignItems: "center", gap: 10, flexWrap: "wrap", margin: "8px auto 18px" },
   winText: { color: "#5cff91", fontSize: 12, fontWeight: "bold", marginTop: 4 },
   loseText: { color: "#ff7777", fontSize: 12, fontWeight: "bold", marginTop: 4 },
   button: { margin: 12, padding: "12px 22px", fontSize: 18, fontWeight: "bold", borderRadius: 10, cursor: "pointer", border: "none" },
@@ -997,10 +1070,11 @@ const styles = {
   darkButton: { margin: 6, padding: "12px 18px", fontSize: 16, fontWeight: "bold", borderRadius: 999, cursor: "pointer", border: "none", background: "#374151", color: "white" },
   linkButton: { margin: 6, padding: "12px 18px", fontSize: 16, fontWeight: "bold", borderRadius: 999, cursor: "pointer", border: "none", background: "#4b5563", color: "white", textDecoration: "none" },
   removeButton: { position: "absolute", top: -8, right: -8, width: 28, height: 28, borderRadius: 999, border: "none", background: "#ef4444", color: "#fff", fontWeight: 900, cursor: "pointer" },
+  removeButtonSmall: { position: "absolute", top: -7, right: -7, width: 20, height: 20, borderRadius: 999, border: "none", background: "#ef4444", color: "#fff", fontWeight: 900, cursor: "pointer", fontSize: 12, lineHeight: "20px", padding: 0 },
   allianceGrid: { display: "flex", flexDirection: "column", gap: 18, alignItems: "center" },
   allianceBox: { background: "#202020", border: "2px solid #555", borderRadius: 14, padding: 14, width: "min(900px, 95%)" },
   miniRow: { display: "flex", justifyContent: "center", flexWrap: "wrap", gap: 12 },
-  voteGrid: { display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 14, margin: "20px auto", maxWidth: 920 },
+  voteGrid: { display: "grid", gridTemplateColumns: "repeat(6, minmax(0, 1fr))", gap: 12, margin: "20px auto", maxWidth: 1380 },
   voteCard: { display: "flex", alignItems: "center", justifyContent: "center", gap: 12, background: "#1d1d1d", border: "2px solid #444", borderRadius: 14, padding: 10 },
   revealBox: { width: 120, height: 120, borderRadius: 12, fontSize: 46, fontWeight: "bold", cursor: "pointer", border: "3px solid white", background: "#333", color: "white" },
   revealedVote: { display: "flex", flexDirection: "column", alignItems: "center", fontSize: 14, gap: 5 },
@@ -1016,6 +1090,8 @@ const styles = {
   callOutMain: { display: "flex", justifyContent: "center", alignItems: "center", gap: 18, flexWrap: "wrap" },
   duelRow: { display: "flex", justifyContent: "center", alignItems: "center", gap: 22, flexWrap: "wrap", marginTop: 28 },
   vs: { fontSize: 30 },
+  safeBox: { background: "#14532d", border: "4px solid #22c55e", borderRadius: 16, padding: 20, margin: "0 auto 20px", maxWidth: 720, fontSize: 30, fontWeight: 950, color: "white" },
+  safeSubtext: { fontSize: 16, marginTop: 8, fontWeight: 800, color: "#dcfce7" },
   saveBox: { margin: "24px auto", maxWidth: 520, display: "grid", gap: 10, background: "#1f1f1f", border: "1px solid #333", borderRadius: 18, padding: 18 },
   input: { padding: 12, borderRadius: 10, border: "1px solid #444", background: "#111", color: "white", fontWeight: 700 },
   textarea: { padding: 12, borderRadius: 10, border: "1px solid #444", background: "#111", color: "white", fontWeight: 700, minHeight: 90 },
