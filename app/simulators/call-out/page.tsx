@@ -22,6 +22,112 @@ function cloneData(value) {
   return JSON.parse(JSON.stringify(value));
 }
 
+
+const HIGHLIGHT_GROUPS = [
+  { dark: "#991b1b", light: "#fecaca", border: "#ef4444" },
+  { dark: "#166534", light: "#bbf7d0", border: "#22c55e" },
+  { dark: "#1d4ed8", light: "#bfdbfe", border: "#3b82f6" },
+  { dark: "#7e22ce", light: "#e9d5ff", border: "#a855f7" },
+  { dark: "#c2410c", light: "#fed7aa", border: "#f97316" },
+  { dark: "#0f766e", light: "#99f6e4", border: "#14b8a6" },
+  { dark: "#be185d", light: "#fbcfe8", border: "#ec4899" },
+  { dark: "#854d0e", light: "#fef08a", border: "#eab308" },
+];
+
+function getVoteCountEntries(players, counts) {
+  return Object.entries(counts)
+    .map(([id, count]) => ({
+      id,
+      player: getPlayer(players, id),
+      count,
+    }))
+    .filter((entry) => entry.player)
+    .sort((a, b) => b.count - a.count || String(a.player.name).localeCompare(String(b.player.name)));
+}
+
+function getFinalVoteHighlightMap(players, votes) {
+  if (!votes.length || votes.some((vote) => !vote.revealed)) {
+    return { targetColors: {}, voterColors: {}, tiedTargetIds: [] };
+  }
+
+  const counts = {};
+  votes.forEach((vote) => {
+    counts[vote.targetId] = (counts[vote.targetId] || 0) + 1;
+  });
+
+  const entries = getVoteCountEntries(players, counts);
+  const highest = entries[0]?.count || 0;
+  const tiedTargets = entries.filter((entry) => entry.count === highest && highest > 0);
+  const targetColors = {};
+  const voterColors = {};
+
+  tiedTargets.forEach((entry, index) => {
+    const group = HIGHLIGHT_GROUPS[index % HIGHLIGHT_GROUPS.length];
+    targetColors[entry.id] = {
+      dark: group.dark,
+      light: group.light,
+      border: group.border,
+    };
+
+    votes
+      .filter((vote) => String(vote.targetId) === String(entry.id))
+      .forEach((vote) => {
+        if (!voterColors[vote.voterId]) voterColors[vote.voterId] = [];
+        voterColors[vote.voterId].push(group.light);
+      });
+  });
+
+  return {
+    targetColors,
+    voterColors,
+    tiedTargetIds: tiedTargets.map((entry) => entry.id),
+  };
+}
+
+function getVoteCardHighlightStyle(playerId, finalHighlights) {
+  const targetColor = finalHighlights.targetColors[playerId];
+  const voterColors = finalHighlights.voterColors[playerId] || [];
+  const colors = [];
+
+  if (targetColor?.dark) colors.push(targetColor.dark);
+  voterColors.forEach((color) => {
+    if (!colors.includes(color)) colors.push(color);
+  });
+
+  if (colors.length === 0) return {};
+
+  if (colors.length === 1) {
+    const isLight = colors[0].startsWith("#f") || colors[0].startsWith("#e") || colors[0].startsWith("#b") || colors[0].startsWith("#a") || colors[0].startsWith("#9");
+    return {
+      background: colors[0],
+      borderColor: targetColor?.border || colors[0],
+      color: isLight && !targetColor?.dark ? "#111827" : "white",
+    };
+  }
+
+  const step = 100 / colors.length;
+  const gradient = colors
+    .map((color, index) => `${color} ${index * step}%, ${color} ${(index + 1) * step}%`)
+    .join(", ");
+
+  return {
+    background: `linear-gradient(90deg, ${gradient})`,
+    borderColor: targetColor?.border || "#ffffff",
+    color: "white",
+  };
+}
+
+function VoteCountCard({ player, count }) {
+  return (
+    <div style={styles.liveCountCard}>
+      <img src={getImage(player)} alt={player.name} style={styles.liveCountImg} />
+      <div style={styles.liveCountName}>{player.name}</div>
+      <div style={styles.liveCountNumber}>{count}</div>
+    </div>
+  );
+}
+
+
 function makeAlliances(players, oldAlliances = []) {
   const livingIds = players.filter((p) => !p.eliminated).map((p) => p.id);
 
@@ -184,7 +290,7 @@ function AddCastMembersModal({
   );
 }
 
-function PlayerCard({ player, eliminated, compact, status }) {
+function PlayerCard({ player, eliminated, compact, status, highlightStyle = null }) {
   if (!player) return null;
   const image = getImage(player);
 
@@ -196,17 +302,21 @@ function PlayerCard({ player, eliminated, compact, status }) {
         position: "relative",
         width: compact ? 120 : 150,
         border:
-          status === "win"
-            ? "4px solid #18d45b"
-            : status === "lose" || status === "different"
-              ? "4px solid #ff3333"
-              : "2px solid #555",
+          highlightStyle?.borderColor
+            ? `4px solid ${highlightStyle.borderColor}`
+            : status === "win"
+              ? "4px solid #18d45b"
+              : status === "lose" || status === "different"
+                ? "4px solid #ff3333"
+                : "2px solid #555",
         background:
-          status === "win"
+          highlightStyle?.background ||
+          (status === "win"
             ? "#0f3d20"
             : status === "lose" || status === "different"
               ? "#401111"
-              : "#222",
+              : "#222"),
+        color: highlightStyle?.color || "white",
         opacity: eliminated ? 0.35 : 1,
       }}
     >
@@ -480,6 +590,19 @@ export default function CallOutSimulator() {
     return counts;
   }, [votes]);
 
+  const voteCountEntries = useMemo(
+    () => getVoteCountEntries(players, revealedVoteCounts),
+    [players, revealedVoteCounts]
+  );
+
+  const allVotesRevealed = votes.length > 0 && votes.every((vote) => vote.revealed);
+
+  const finalVoteHighlights = useMemo(
+    () => getFinalVoteHighlightMap(players, votes),
+    [players, votes]
+  );
+
+
   function advanceFromVotes() {
     const counts = {};
     votes.forEach((v) => {
@@ -672,13 +795,27 @@ export default function CallOutSimulator() {
       {screen === "votes" && (
         <>
           <h2>Vote Reveal</h2>
+
+          <div style={styles.liveCountGrid}>
+            {voteCountEntries.length === 0 ? (
+              <div style={styles.noVotesBox}>No votes revealed yet</div>
+            ) : (
+              voteCountEntries.map(({ id, player, count }) => (
+                <VoteCountCard key={id} player={player} count={count} />
+              ))
+            )}
+          </div>
+
           <div style={styles.voteGrid}>
             {active.map((p) => {
               const vote = votes.find((v) => v.voterId === p.id);
               const target = getPlayer(players, vote?.targetId);
+              const highlightStyle = allVotesRevealed ? getVoteCardHighlightStyle(p.id, finalVoteHighlights) : {};
+
               return (
-                <div key={p.id} style={styles.voteCard}>
-                  <PlayerCard player={p} compact />
+                <div key={p.id} style={{ ...styles.voteCard, ...highlightStyle }}>
+                  <PlayerCard player={p} compact highlightStyle={highlightStyle} />
+
                   <button style={styles.revealBox} onClick={() => revealVote(p.id)}>
                     {vote?.revealed && target ? <div style={styles.revealedVote}><img src={getImage(target)} style={styles.voteImg} /><strong>{target.name}</strong></div> : "?"}
                   </button>
@@ -686,14 +823,7 @@ export default function CallOutSimulator() {
               );
             })}
           </div>
-          <h3>Revealed Vote Count</h3>
-          <div style={styles.countBox}>
-            {Object.entries(revealedVoteCounts).length === 0 && <div>No votes revealed yet</div>}
-            {Object.entries(revealedVoteCounts).sort((a, b) => b[1] - a[1]).map(([id, count]) => {
-              const p = getPlayer(players, id);
-              return <div key={id} style={styles.countItem}>{p?.name}: {count}</div>;
-            })}
-          </div>
+
           <button style={styles.button} onClick={revealAllVotes}>Reveal All</button>
           <button style={styles.button} onClick={advanceFromVotes}>Advance</button>
         </>
@@ -708,9 +838,10 @@ export default function CallOutSimulator() {
               const p = getPlayer(players, id);
               if (!p) return null;
               const inDifferentElimination = currentMatch.unavailableVoterIds.includes(id);
+              const wasCalledOut = currentMatch.callOutRevealed && String(currentMatch.callOutId) === String(id);
               return (
-                <div key={id} style={{ ...styles.voterWrap, ...(inDifferentElimination ? styles.differentElimBox : {}) }}>
-                  <PlayerCard player={p} compact status={inDifferentElimination ? "different" : undefined} />
+                <div key={id} style={{ ...styles.voterWrap, ...(inDifferentElimination || wasCalledOut ? styles.differentElimBox : {}) }}>
+                  <PlayerCard player={p} compact status={inDifferentElimination || wasCalledOut ? "different" : undefined} />
                   {inDifferentElimination && <div style={styles.diffElimTag}>IN DIFFERENT ELIMINATION</div>}
                 </div>
               );
