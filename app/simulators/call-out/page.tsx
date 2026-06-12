@@ -121,17 +121,103 @@ function VoteCountCard({ player, count }) {
   const image = getImage(player);
 
   return (
-    <div style={styles.liveCountCard}>
-      <div style={styles.liveCountIconWrap}>
+    <div
+      style={{
+        width: 86,
+        height: 112,
+        minWidth: 86,
+        maxWidth: 86,
+        background: "#242424",
+        border: "2px solid #555",
+        borderRadius: 12,
+        padding: 6,
+        display: "grid",
+        gridTemplateRows: "50px 26px 24px",
+        justifyItems: "center",
+        alignItems: "center",
+        gap: 2,
+        overflow: "hidden",
+        boxSizing: "border-box",
+        flex: "0 0 86px",
+      }}
+    >
+      <div
+        style={{
+          width: 48,
+          height: 48,
+          minWidth: 48,
+          minHeight: 48,
+          maxWidth: 48,
+          maxHeight: 48,
+          overflow: "hidden",
+          borderRadius: 9,
+          background: "#111827",
+          border: "2px solid rgba(255,255,255,.35)",
+          boxSizing: "border-box",
+          display: "block",
+        }}
+      >
         {image ? (
-          <img src={image} alt={player.name} style={styles.liveCountImg} />
+          <img
+            src={image}
+            alt={player.name}
+            style={{
+              width: 48,
+              height: 48,
+              minWidth: 48,
+              minHeight: 48,
+              maxWidth: 48,
+              maxHeight: 48,
+              objectFit: "cover",
+              objectPosition: "center",
+              display: "block",
+              borderRadius: 7,
+            }}
+          />
         ) : (
-          <div style={styles.liveCountNoImage}>?</div>
+          <div
+            style={{
+              width: 48,
+              height: 48,
+              display: "grid",
+              placeItems: "center",
+              color: "#94a3b8",
+              fontWeight: 900,
+              fontSize: 20,
+            }}
+          >
+            ?
+          </div>
         )}
       </div>
 
-      <div style={styles.liveCountName}>{player.name}</div>
-      <div style={styles.liveCountNumber}>{count}</div>
+      <div
+        style={{
+          width: "100%",
+          height: 24,
+          fontSize: 10,
+          fontWeight: 900,
+          lineHeight: 1.05,
+          textAlign: "center",
+          overflow: "hidden",
+          display: "-webkit-box",
+          WebkitLineClamp: 2,
+          WebkitBoxOrient: "vertical",
+        }}
+      >
+        {player.name}
+      </div>
+
+      <div
+        style={{
+          fontSize: 28,
+          fontWeight: 950,
+          lineHeight: 1,
+          color: "#ff1493",
+        }}
+      >
+        {count}
+      </div>
     </div>
   );
 }
@@ -921,6 +1007,8 @@ const styles = {
   voteImg: { width: 70, height: 70, objectFit: "cover", borderRadius: 8 },
   countBox: { display: "flex", flexWrap: "wrap", justifyContent: "center", gap: 8, margin: "10px auto", maxWidth: 850 },
   countItem: { background: "#333", padding: "8px 12px", borderRadius: 8 },
+  liveCountGrid: { display: "flex", flexWrap: "wrap", justifyContent: "center", alignItems: "center", gap: 8, margin: "14px auto 18px", maxWidth: 1050 },
+  noVotesBox: { background: "#242424", border: "2px dashed #555", color: "#ddd", padding: "14px 20px", borderRadius: 14, fontWeight: 900 },
   topLine: { display: "flex", justifyContent: "center", flexWrap: "wrap", gap: 12, marginBottom: 24 },
   voterWrap: { borderRadius: 12, padding: 6 },
   differentElimBox: { background: "#7d1010", border: "3px solid #ff3333" },
