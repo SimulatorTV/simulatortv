@@ -95,6 +95,14 @@ export default function SimulatorsPage() {
           />
 
           <SimulatorCard
+  title="Call Out"
+  description="Form alliances, vote players into elimination, call out your voters, and survive head-to-head eliminations."
+  href="/simulators/call-out"
+  buttonText="Open Call Out"
+  buttonClass="bg-fuchsia-600 hover:bg-fuchsia-500 text-white"
+/>
+
+          <SimulatorCard
   title="The Traitors"
   description="Faithfuls, Traitors, murders, shields, recruitments, ultimatums, round tables, and endgame mind games."
   href="/simulators/the-traitors"
