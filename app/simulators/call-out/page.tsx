@@ -118,9 +118,18 @@ function getVoteCardHighlightStyle(playerId, finalHighlights) {
 }
 
 function VoteCountCard({ player, count }) {
+  const image = getImage(player);
+
   return (
     <div style={styles.liveCountCard}>
-      <img src={getImage(player)} alt={player.name} style={styles.liveCountImg} />
+      <div style={styles.liveCountIconWrap}>
+        {image ? (
+          <img src={image} alt={player.name} style={styles.liveCountImg} />
+        ) : (
+          <div style={styles.liveCountNoImage}>?</div>
+        )}
+      </div>
+
       <div style={styles.liveCountName}>{player.name}</div>
       <div style={styles.liveCountNumber}>{count}</div>
     </div>
