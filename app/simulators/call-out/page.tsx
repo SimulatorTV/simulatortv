@@ -395,7 +395,7 @@ function PlayerCard({ player, eliminated, compact, tiny, status, highlightStyle 
         borderRadius: 12,
         padding: 8,
         position: "relative",
-        width: tiny ? 70 : compact ? 120 : 150,
+        width: tiny ? 92 : compact ? 120 : 150,
         border:
           highlightStyle?.borderColor
             ? `4px solid ${highlightStyle.borderColor}`
@@ -421,18 +421,18 @@ function PlayerCard({ player, eliminated, compact, tiny, status, highlightStyle 
           alt={player.name}
           style={{
             width: "100%",
-            height: tiny ? 64 : compact ? 110 : 145,
+            height: tiny ? 86 : compact ? 110 : 145,
             objectFit: "cover",
             borderRadius: 8,
             filter: eliminated || status === "lose" ? "grayscale(1)" : "none",
           }}
         />
       ) : (
-        <div style={{ width: "100%", height: compact ? 110 : 145, borderRadius: 8, background: "#111827", display: "grid", placeItems: "center", color: "#94a3b8", fontWeight: 900, fontSize: 12 }}>
+        <div style={{ width: "100%", height: tiny ? 86 : compact ? 110 : 145, borderRadius: 8, background: "#111827", display: "grid", placeItems: "center", color: "#94a3b8", fontWeight: 900, fontSize: 12 }}>
           No Image
         </div>
       )}
-      <div style={{ fontWeight: "bold", marginTop: tiny ? 4 : 8, fontSize: tiny ? 10 : undefined, lineHeight: tiny ? 1.05 : undefined }}>{player.name}</div>
+      <div style={{ fontWeight: "bold", marginTop: tiny ? 4 : 8, fontSize: tiny ? 12 : undefined, lineHeight: tiny ? 1.05 : undefined }}>{player.name}</div>
       {status === "win" && !tiny && <div style={styles.winText}>WINNER</div>}
       {status === "lose" && !tiny && <div style={styles.loseText}>ELIMINATED</div>}
       {eliminated && !status && !tiny && <div style={styles.loseText}>ELIMINATED</div>}
@@ -1061,7 +1061,7 @@ const styles = {
   subtitle: { marginTop: 6, color: "#ddd" },
   emptyBox: { background: "#1f1f1f", border: "2px dashed #555", borderRadius: 16, padding: 28, maxWidth: 700, margin: "20px auto", color: "#ddd", fontWeight: 900 },
   grid: { display: "flex", flexWrap: "wrap", justifyContent: "center", gap: 14, marginTop: 20 },
-  castGridSmall: { display: "grid", gridTemplateColumns: "repeat(14, 70px)", justifyContent: "center", gap: 8, marginTop: 18 },
+  castGridSmall: { display: "grid", gridTemplateColumns: "repeat(14, 92px)", justifyContent: "center", gap: 10, marginTop: 18, width: "100%", maxWidth: 1440, marginLeft: "auto", marginRight: "auto" },
   topButtonRow: { display: "flex", justifyContent: "center", alignItems: "center", gap: 10, flexWrap: "wrap", margin: "8px auto 18px" },
   winText: { color: "#5cff91", fontSize: 12, fontWeight: "bold", marginTop: 4 },
   loseText: { color: "#ff7777", fontSize: 12, fontWeight: "bold", marginTop: 4 },
