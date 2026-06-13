@@ -573,7 +573,7 @@ function generateExecutionerRound(activePlayers, weekNumber, twistId) {
   const finalNomineePlayers = activePlayers.filter((player) => player.name !== executionerWinner?.name);
   const votingPlayers = executionerWinner ? [executionerWinner] : [];
   const votingTargets = [pickOne(finalNomineePlayers)?.name ?? null];
-  const voteResult = getEvictionVoteResult(finalNomineePlayers, votingTargets, hohPlayer || immunityWinner || executionerWinner || null);
+  const voteResult = getEvictionVoteResult(finalNomineePlayers, votingTargets, executionerWinner || null);
   const evictedPlayer = voteResult.evictedPlayer;
   const survivors = castGrid.filter((player) => player.name !== evictedPlayer?.name);
 
