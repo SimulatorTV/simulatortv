@@ -129,20 +129,27 @@ export default function CastDetailPage() {
 
       <section className="p-8">
         <div className="flex flex-wrap items-center gap-4">
-  <Link
-    href="/custom-casts"
-    className="text-blue-400 hover:text-blue-300"
-  >
-    ← Back to Custom Casts
-  </Link>
+          <Link
+            href="/custom-casts"
+            className="text-blue-400 hover:text-blue-300"
+          >
+            ← Back to Custom Casts
+          </Link>
 
-  <Link
-    href="/custom-casts/create-full-cast"
-    className="bg-pink-600 hover:bg-pink-500 px-5 py-2 rounded-xl font-black text-white"
-  >
-    Create Full Cast
-  </Link>
-</div>
+          <Link
+            href="/custom-casts/create-full-cast"
+            className="bg-pink-600 hover:bg-pink-500 px-5 py-2 rounded-xl font-black text-white"
+          >
+            Create Full Cast
+          </Link>
+
+          <Link
+            href={`/custom-casts/create-full-cast?edit=${castId}`}
+            className="bg-purple-600 hover:bg-purple-500 px-5 py-2 rounded-xl font-black text-white"
+          >
+            Add Existing Cast Members
+          </Link>
+        </div>
 
         <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6 mt-6 mb-8 max-w-2xl">
           <h1 className="text-4xl font-bold mb-6">
