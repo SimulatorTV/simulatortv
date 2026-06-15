@@ -11,6 +11,7 @@ import BigBrotherReplayScreen from "../../../components/big-brother/BigBrotherRe
 import BattleOfTheShowsReplayScreen from "../../../components/battle-of-the-shows/BattleOfTheShowsReplayScreen";
 import RedneckIslandReplayScreen from "../../../components/redneck-island/RedneckIslandReplayScreen";
 import FreeAgentsReplayScreen from "../../../components/free-agents/FreeAgentsReplayScreen";
+import CallOutReplayScreen from "../../../components/call-out/CallOutReplayScreen";
 import { supabase } from "../../../lib/supabase";
 
 function getPlayersFromEntry(entry: any) {
@@ -665,6 +666,10 @@ export default function SavedSeasonReplayPage() {
     season?.simulator_type?.toLowerCase().includes("free-agents") ||
     season?.simulator_type?.toLowerCase().includes("free agents");
 
+  const isCallOut =
+    season?.simulator_type?.toLowerCase().includes("call-out") ||
+    season?.simulator_type?.toLowerCase().includes("call out");
+
   const timeline = season?.data_json?.season || [];
   const bigBrotherRounds = season?.data_json?.seasonFlow?.rounds || [];
 
@@ -746,6 +751,19 @@ export default function SavedSeasonReplayPage() {
       <FreeAgentsReplayScreen
         history={season?.data_json?.history || []}
         winner={season?.data_json?.champion}
+        onExit={() => {
+          setStarted(false);
+          setStepIndex(0);
+        }}
+      />
+    );
+  }
+
+  if (started && isCallOut) {
+    return (
+      <CallOutReplayScreen
+        history={season?.data_json?.history || []}
+        winner={season?.data_json?.winner}
         onExit={() => {
           setStarted(false);
           setStepIndex(0);
@@ -869,7 +887,7 @@ export default function SavedSeasonReplayPage() {
               disabled={
                 isBigBrother
                   ? !bigBrotherRounds.length
-                  : isBattleOfTheShows || isBattleOfTheShows || isRedneckIsland || isFreeAgents
+                  : isBattleOfTheShows || isBattleOfTheShows || isRedneckIsland || isFreeAgents || isCallOut
                     ? !(season?.data_json?.history?.length)
                     : !timeline.length
               }
