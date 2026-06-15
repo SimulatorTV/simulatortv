@@ -66,7 +66,7 @@ export default function CustomCastsPage() {
       <Navbar />
 
       <section className="p-8">
-        <div className="flex justify-between items-center mb-8">
+        <div className="flex flex-wrap justify-between items-center gap-4 mb-8">
           <div>
             <h2 className="text-5xl font-bold mb-2">
               Custom Casts
@@ -77,12 +77,21 @@ export default function CustomCastsPage() {
             </p>
           </div>
 
-          <Link
-            href="/cast-creator"
-            className="bg-blue-600 hover:bg-blue-500 px-6 py-3 rounded-xl font-bold"
-          >
-            Add Cast
-          </Link>
+          <div className="flex flex-wrap gap-3">
+            <Link
+              href="/cast-creator"
+              className="bg-blue-600 hover:bg-blue-500 px-6 py-3 rounded-xl font-bold"
+            >
+              Add Cast
+            </Link>
+
+            <Link
+              href="/custom-casts/create-full-cast"
+              className="bg-pink-600 hover:bg-pink-500 px-6 py-3 rounded-xl font-bold text-white"
+            >
+              Create Full Cast
+            </Link>
+          </div>
         </div>
 
         {casts.length === 0 ? (
