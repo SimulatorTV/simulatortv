@@ -16,7 +16,7 @@ export default function SimulatorsPage() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           <SimulatorCard
             title="Color Blitz"
-            description="Fast-paced color survival chaos with eliminations, rotations, and custom rules."
+            description="Everyone picks a color. The Spinner eliminates a color. Pick a different color."
             href="/simulators/color-blitz"
             buttonText="Open Color Blitz"
             buttonClass="bg-blue-600 hover:bg-blue-500"
@@ -24,7 +24,7 @@ export default function SimulatorsPage() {
 
           <SimulatorCard
             title="Survivor Simulator"
-            description="Tribes, idols, swaps, merges, twists, jury votes, and total chaos."
+            description="Survivor simulator with custom round formats and advantages."
             href="/simulators/survivor"
             buttonText="Open Survivor"
             buttonClass="bg-green-600 hover:bg-green-500"
@@ -32,7 +32,7 @@ export default function SimulatorsPage() {
 
           <SimulatorCard
             title="Big Brother"
-            description="HOHs, nominations, vetoes, twists, split houses, battle backs, and jury votes."
+            description="Big Brother simulator with custom weekly formats and twists"
             href="/simulators/big-brother"
             buttonText="Open Big Brother"
             buttonClass="bg-cyan-600 hover:bg-cyan-500"
@@ -40,7 +40,7 @@ export default function SimulatorsPage() {
 
 <SimulatorCard
   title="The Duel"
-  description="Daily challenges, safety chains, duels, double duels, poker, blackjack, popularity votes, and dozens of elimination games."
+  description="The Challenge: The Duel with different toggalable daily challenges and elimination duels."
   href="/simulators/the-duel"
   buttonText="Open The Duel"
   buttonClass="bg-red-600 hover:bg-red-500"
@@ -48,7 +48,7 @@ export default function SimulatorsPage() {
 
           <SimulatorCard
             title="Free Agents"
-            description="Random teams, challenge rankings, elimination battles, and constantly shifting formats."
+            description="Teams change every round. Last place team sends 2 players into elimination."
             href="/simulators/free-agents"
             buttonText="Open Free Agents"
             buttonClass="bg-yellow-500 hover:bg-yellow-400 text-black"
@@ -56,7 +56,7 @@ export default function SimulatorsPage() {
 
           <SimulatorCard
             title="Endurance"
-            description="Team colors, Temple of Fate, temple pieces, missions, and final showdown."
+            description="Teams battle to collect Endurance pieces and stay out of the Temple of Fate."
             href="/simulators/endurance"
             buttonText="Open Endurance"
             buttonClass="bg-purple-600 hover:bg-purple-500"
@@ -64,7 +64,7 @@ export default function SimulatorsPage() {
 
           <SimulatorCard
   title="Battle of the Shows"
-  description="Shows battle as teams through challenges, call-outs, voting, matchups, and eliminations until one show remains."
+  description="Teams of the same cast compete in challenges and eliminations until one team remains."
   href="/simulators/battle-of-the-shows"
   buttonText="Open Battle of the Shows"
   buttonClass="bg-teal-600 hover:bg-teal-500 text-white"
@@ -72,7 +72,7 @@ export default function SimulatorsPage() {
 
 <SimulatorCard
   title="Russian Roulette"
-  description="Spin the gun, survive the chamber, manage bullets and clip size, and play normal or tournament mode."
+  description="Russian roulette simulator with custom clip size and bullets per clip."
   href="/simulators/russian-roulette"
   buttonText="Open Russian Roulette"
   buttonClass="bg-zinc-300 hover:bg-zinc-200 text-black"
@@ -88,7 +88,7 @@ export default function SimulatorsPage() {
 
           <SimulatorCard
             title="Trio"
-            description="Teams of three battle through challenges and eliminations until one trio remains."
+            description="Teams of three that change in elimination rounds."
             href="/simulators/trio"
             buttonText="Open Trio"
             buttonClass="bg-orange-600 hover:bg-orange-500"
@@ -96,7 +96,7 @@ export default function SimulatorsPage() {
 
           <SimulatorCard
   title="Call Out"
-  description="Form alliances, vote players into elimination, call out your voters, and survive head-to-head eliminations."
+  description="Most voted person(s) calls out someone that voted them in to a 1v1 elimination. Last person standing wins."
   href="/simulators/call-out"
   buttonText="Open Call Out"
   buttonClass="bg-fuchsia-600 hover:bg-fuchsia-500 text-white"
@@ -104,7 +104,7 @@ export default function SimulatorsPage() {
 
           <SimulatorCard
   title="The Traitors"
-  description="Faithfuls, Traitors, murders, shields, recruitments, ultimatums, round tables, and endgame mind games."
+  description="The Traitors simulator"
   href="/simulators/the-traitors"
   buttonText="Open The Traitors"
   buttonClass="bg-white hover:bg-gray-200 text-black"
@@ -112,7 +112,7 @@ export default function SimulatorsPage() {
 
 <SimulatorCard
   title="Grand Eliminator"
-  description="Win challenges, nominate players, survive the elimination arena, and reach the final showdown."
+  description="Challenge winner sends 4 into elimination. One is eliminated, the other 3 go to the next round. Last person standing wins."
   href="/simulators/grand-eliminator"
   buttonText="Open Grand Eliminator"
   buttonClass="bg-emerald-700 hover:bg-emerald-600 text-white"
@@ -129,7 +129,7 @@ export default function SimulatorsPage() {
 
           <SimulatorCard
             title="Card Game Elimination"
-            description="Poker, Blackjack, Baccarat, Bingo, War, Liar's Dice, and more."
+            description="Elimination game with toggleable daily challenges and eliminations based on card games. Last person standing wins."
             href="/simulators/card-game-elimination"
             buttonText="Open Simulator"
             buttonClass="bg-blue-600 hover:bg-blue-500"
