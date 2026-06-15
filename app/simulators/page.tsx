@@ -80,7 +80,7 @@ export default function SimulatorsPage() {
 
 <SimulatorCard
   title="Redneck Island"
-  description="Spin the gun, survive the chamber, manage bullets and clip size, and play normal or tournament mode."
+  description="Teams of two that can change in an elimination round."
   href="/simulators/redneck-island"
   buttonText="Open Redneck Island"
   buttonClass="bg-green-900 hover:bg-green-800 text-white"
