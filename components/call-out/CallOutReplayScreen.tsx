@@ -2,7 +2,7 @@
 
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import Navbar from "../Navbar";
 
 function getImage(player) {
@@ -176,15 +176,47 @@ export default function CallOutReplayScreen({ history = [], winner, onExit }) {
   const players = entry.players || [];
   const active = players.filter((p) => !p.eliminated);
   const alliances = entry.alliances || [];
-  const votes = entry.votes || [];
   const matches = entry.matches || [];
   const matchIndex = entry.matchIndex || 0;
   const currentMatch = matches[matchIndex];
   const screen = entry.screen || "cast";
 
+  const [replayVotes, setReplayVotes] = useState([]);
+  const [replayMatches, setReplayMatches] = useState([]);
+
+  useEffect(() => {
+    setReplayVotes((entry.votes || []).map((vote) => ({ ...vote })));
+    setReplayMatches((entry.matches || []).map((match) => ({ ...match })));
+  }, [index]);
+
+  const votes = replayVotes;
+  const displayMatches = replayMatches.length ? replayMatches : matches;
+  const displayCurrentMatch = displayMatches[matchIndex];
   const counts = voteCountEntries(players, votes, true);
   const allRevealed = votes.length > 0 && votes.every((vote) => vote.revealed);
   const highlights = finalVoteHighlights(players, votes);
+
+  function revealReplayVote(voterId) {
+    setReplayVotes((old) =>
+      old.map((vote) =>
+        String(vote.voterId) === String(voterId)
+          ? { ...vote, revealed: true }
+          : vote
+      )
+    );
+  }
+
+  function revealAllReplayVotes() {
+    setReplayVotes((old) => old.map((vote) => ({ ...vote, revealed: true })));
+  }
+
+  function revealReplayCallOut() {
+    setReplayMatches((old) =>
+      old.map((match, i) =>
+        i === matchIndex ? { ...match, callOutRevealed: true } : match
+      )
+    );
+  }
 
   function renderCast() {
     return (
@@ -225,6 +257,11 @@ export default function CallOutReplayScreen({ history = [], winner, onExit }) {
     return (
       <>
         <h2>Vote Reveal</h2>
+
+        <div style={styles.topButtonRow}>
+          <button style={styles.hotButton} onClick={revealAllReplayVotes}>Reveal All</button>
+        </div>
+
         <div style={styles.liveCountGrid}>
           {counts.length === 0 ? <div style={styles.noVotesBox}>No votes revealed yet</div> : counts.map(({ id, player, count }) => <VoteCountCard key={id} player={player} count={count} />)}
         </div>
@@ -238,14 +275,14 @@ export default function CallOutReplayScreen({ history = [], winner, onExit }) {
             return (
               <div key={p.id} style={{ ...styles.voteCard, ...style }}>
                 <PlayerCard player={p} compact styleOverride={style} />
-                <div style={styles.revealBox}>
+                <button style={styles.revealBox} onClick={() => revealReplayVote(p.id)}>
                   {vote?.revealed && target ? (
                     <div style={styles.revealedVote}>
                       <img src={getImage(target)} style={styles.voteImg} />
                       <strong>{target.name}</strong>
                     </div>
                   ) : "?"}
-                </div>
+                </button>
               </div>
             );
           })}
@@ -255,6 +292,7 @@ export default function CallOutReplayScreen({ history = [], winner, onExit }) {
   }
 
   function renderCallout() {
+    const currentMatch = displayCurrentMatch;
     if (!currentMatch) return renderCast();
 
     return (
@@ -290,14 +328,14 @@ export default function CallOutReplayScreen({ history = [], winner, onExit }) {
           <PlayerCard player={getPlayer(players, currentMatch.sentInId)} compact />
 
           {!currentMatch.safe && (
-            <div style={styles.revealBox}>
+            <button style={styles.revealBox} onClick={revealReplayCallOut}>
               {currentMatch.callOutRevealed && currentMatch.callOutId ? (
                 <div style={styles.revealedVote}>
                   <img src={getImage(getPlayer(players, currentMatch.callOutId))} style={styles.voteImg} />
                   <strong>{getPlayer(players, currentMatch.callOutId)?.name}</strong>
                 </div>
               ) : "?"}
-            </div>
+            </button>
           )}
         </div>
       </>
@@ -305,6 +343,7 @@ export default function CallOutReplayScreen({ history = [], winner, onExit }) {
   }
 
   function renderElimination() {
+    const currentMatch = displayCurrentMatch;
     if (!currentMatch) return renderCast();
 
     return (
@@ -379,7 +418,7 @@ const styles = {
   miniRow: { display: "flex", justifyContent: "center", flexWrap: "wrap", gap: 12 },
   voteGrid: { display: "grid", gridTemplateColumns: "repeat(6, minmax(0, 1fr))", gap: 12, margin: "20px auto", maxWidth: 1380 },
   voteCard: { display: "flex", alignItems: "center", justifyContent: "center", gap: 12, background: "#1d1d1d", border: "2px solid #444", borderRadius: 14, padding: 10 },
-  revealBox: { width: 120, height: 120, borderRadius: 12, fontSize: 46, fontWeight: "bold", border: "3px solid white", background: "#333", color: "white", display: "grid", placeItems: "center" },
+  revealBox: { width: 120, height: 120, borderRadius: 12, fontSize: 46, fontWeight: "bold", border: "3px solid white", background: "#333", color: "white", display: "grid", placeItems: "center", cursor: "pointer", padding: 0 },
   revealedVote: { display: "flex", flexDirection: "column", alignItems: "center", fontSize: 14, gap: 5 },
   voteImg: { width: 70, height: 70, objectFit: "cover", borderRadius: 8 },
   liveCountGrid: { display: "flex", flexWrap: "wrap", justifyContent: "center", alignItems: "center", gap: 8, margin: "14px auto 18px", maxWidth: 1050 },
