@@ -111,6 +111,15 @@ export default function SimulatorsPage() {
 />
 
 <SimulatorCard
+  title="Grand Eliminator"
+  description="Win challenges, nominate players, survive the elimination arena, and reach the final showdown."
+  href="/simulators/grand-eliminator"
+  buttonText="Open Grand Eliminator"
+  buttonClass="bg-emerald-700 hover:bg-emerald-600 text-white"
+/>
+
+
+<SimulatorCard
   title="Hot Seat"
   description="Choose seats, avoid elimination chairs, survive each round, and find the winning seat in the finale."
   href="/simulators/hot-seat"
