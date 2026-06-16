@@ -55,22 +55,32 @@ function AddCastMembersModal({
   const firstCastId = casts[0]?.id || "";
 
   useEffect(() => {
-    if (!modalCastId && firstCastId) onChooseCast(firstCastId);
+    if (!modalCastId && firstCastId) {
+      onChooseCast(firstCastId);
+    }
   }, [modalCastId, firstCastId]);
 
   function CastButton({ cast }: any) {
+    const active = modalCastId === cast.id;
+
     return (
       <button
         type="button"
         onClick={() => onChooseCast(cast.id)}
-        className={`w-full rounded-2xl border-0 px-4 py-3 text-left font-black cursor-pointer ${
-          modalCastId === cast.id
-            ? "bg-red-600 text-white"
-            : "bg-zinc-950 text-white hover:bg-zinc-900"
-        }`}
+        style={{
+          width: "100%",
+          borderRadius: 16,
+          border: active ? "3px solid #fca5a5" : "2px solid #3f3f46",
+          background: active ? "#dc2626" : "#18181b",
+          color: "white",
+          padding: 12,
+          textAlign: "left",
+          fontWeight: 900,
+          cursor: "pointer",
+        }}
       >
-        <div>{cast.name}</div>
-        <div className="text-xs font-bold opacity-70">
+        <div style={{ fontSize: 16 }}>{cast.name}</div>
+        <div style={{ fontSize: 12, opacity: 0.75 }}>
           {cast.show_name || (cast.is_official ? "Official Cast" : "Custom Cast")}
         </div>
       </button>
@@ -78,43 +88,100 @@ function AddCastMembersModal({
   }
 
   return (
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/85 p-3 text-white">
-      <div className="flex max-h-[90vh] w-full max-w-6xl flex-col overflow-hidden rounded-3xl border border-white/10 bg-zinc-950 text-white shadow-2xl">
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 p-4">
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        zIndex: 99999,
+        background: "rgba(0,0,0,.86)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: 14,
+        color: "white",
+      }}
+    >
+      <div
+        style={{
+          width: "min(1180px, 100%)",
+          maxHeight: "90vh",
+          background: "#09090b",
+          border: "1px solid rgba(255,255,255,.12)",
+          borderRadius: 24,
+          overflow: "hidden",
+          display: "flex",
+          flexDirection: "column",
+          boxShadow: "0 25px 80px rgba(0,0,0,.75)",
+        }}
+      >
+        <div
+          style={{
+            padding: 18,
+            borderBottom: "1px solid rgba(255,255,255,.12)",
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            gap: 12,
+            flexWrap: "wrap",
+          }}
+        >
           <div>
-            <h2 className="text-3xl font-black text-white">Add Cast Members</h2>
-            <p className="text-sm text-zinc-300">
-              Pick individual contestants from custom casts or favorited official casts.
+            <h2 style={{ margin: 0, fontSize: 32, fontWeight: 950 }}>
+              Add Cast Members
+            </h2>
+            <p style={{ margin: "6px 0 0", color: "#d4d4d8", fontWeight: 700 }}>
+              Pick a cast, then click individual players to add.
             </p>
           </div>
 
           <button
             type="button"
             onClick={onClose}
-            className="rounded-2xl border-0 bg-white/10 px-4 py-2 font-black text-white hover:bg-white/20"
+            style={{
+              border: "none",
+              borderRadius: 16,
+              background: "#27272a",
+              color: "white",
+              padding: "10px 16px",
+              fontWeight: 900,
+              cursor: "pointer",
+            }}
           >
             Close
           </button>
         </div>
 
-        <div className="grid min-h-0 flex-1 overflow-hidden md:grid-cols-[320px_1fr]">
-          <div className="space-y-4 overflow-auto border-r border-white/10 p-4">
+        <div
+          style={{
+            minHeight: 0,
+            flex: 1,
+            display: "grid",
+            gridTemplateColumns: "300px 1fr",
+            overflow: "hidden",
+          }}
+        >
+          <div
+            style={{
+              borderRight: "1px solid rgba(255,255,255,.12)",
+              padding: 14,
+              overflow: "auto",
+              display: "flex",
+              flexDirection: "column",
+              gap: 16,
+            }}
+          >
             {loadingCasts ? (
-              <div className="rounded-2xl border border-white/10 bg-black/30 p-4 text-zinc-300">
-                Loading casts...
-              </div>
+              <div style={{ color: "#d4d4d8", fontWeight: 800 }}>Loading casts...</div>
             ) : casts.length === 0 ? (
-              <div className="rounded-2xl border border-rose-300/40 bg-rose-500/15 p-4 text-rose-100">
-                No casts available yet.
-              </div>
+              <div style={{ color: "#fecaca", fontWeight: 800 }}>No casts available yet.</div>
             ) : (
               <>
                 {officialCasts.length > 0 && (
                   <div>
-                    <div className="mb-2 text-xs font-black uppercase tracking-widest text-zinc-400">
-                      Favorite Official Casts
+                    <div style={{ color: "#a1a1aa", fontSize: 12, fontWeight: 950, letterSpacing: 1 }}>
+                      FAVORITE OFFICIAL CASTS
                     </div>
-                    <div className="space-y-2">
+                    <div style={{ display: "grid", gap: 8, marginTop: 8 }}>
                       {officialCasts.map((cast: any) => (
                         <CastButton key={cast.id} cast={cast} />
                       ))}
@@ -124,10 +191,10 @@ function AddCastMembersModal({
 
                 {customCasts.length > 0 && (
                   <div>
-                    <div className="mb-2 text-xs font-black uppercase tracking-widest text-zinc-400">
-                      Custom Casts
+                    <div style={{ color: "#a1a1aa", fontSize: 12, fontWeight: 950, letterSpacing: 1 }}>
+                      CUSTOM CASTS
                     </div>
-                    <div className="space-y-2">
+                    <div style={{ display: "grid", gap: 8, marginTop: 8 }}>
                       {customCasts.map((cast: any) => (
                         <CastButton key={cast.id} cast={cast} />
                       ))}
@@ -138,41 +205,142 @@ function AddCastMembersModal({
             )}
           </div>
 
-          <div className="overflow-auto p-4">
-            <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <div style={{ padding: 14, overflow: "auto" }}>
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                gap: 10,
+                alignItems: "center",
+                flexWrap: "wrap",
+                marginBottom: 14,
+              }}
+            >
               <div>
-                <h3 className="text-2xl font-black text-white">Contestants</h3>
-                <p className="text-sm text-zinc-300">{modalSelectedIds.size} selected</p>
+                <h3 style={{ margin: 0, fontSize: 26, fontWeight: 950 }}>Contestants</h3>
+                <div style={{ color: "#d4d4d8", fontWeight: 800 }}>
+                  {modalSelectedIds.size} selected
+                </div>
               </div>
 
-              <div className="flex flex-wrap gap-2">
-                <button type="button" onClick={onSelectAll} className="rounded-2xl border-0 bg-white/10 px-4 py-2 font-black text-white hover:bg-white/20">Select All</button>
-                <button type="button" onClick={onSelectNone} className="rounded-2xl border-0 bg-white/10 px-4 py-2 font-black text-white hover:bg-white/20">Select None</button>
-                <button type="button" onClick={onAddSelected} disabled={modalSelectedIds.size === 0} className="rounded-2xl border-0 bg-red-600 px-4 py-2 font-black text-white hover:bg-red-500 disabled:opacity-40">Add Selected</button>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <button type="button" onClick={onSelectAll} style={modalSmallButtonStyle}>
+                  Select All
+                </button>
+                <button type="button" onClick={onSelectNone} style={modalSmallButtonStyle}>
+                  Select None
+                </button>
+                <button
+                  type="button"
+                  onClick={onAddSelected}
+                  disabled={modalSelectedIds.size === 0}
+                  style={{
+                    ...modalSmallButtonStyle,
+                    background: modalSelectedIds.size === 0 ? "#3f3f46" : "#dc2626",
+                    opacity: modalSelectedIds.size === 0 ? 0.45 : 1,
+                  }}
+                >
+                  Add Selected
+                </button>
               </div>
             </div>
 
             {loadingContestants ? (
-              <div className="rounded-2xl border border-white/10 bg-black/30 p-6 text-zinc-300">Loading contestants...</div>
+              <div style={{ color: "#d4d4d8", fontWeight: 800 }}>Loading contestants...</div>
             ) : modalContestants.length === 0 ? (
-              <div className="rounded-2xl border border-white/10 bg-black/30 p-6 text-zinc-300">No contestants found for this cast.</div>
+              <div style={{ color: "#d4d4d8", fontWeight: 800 }}>No contestants found for this cast.</div>
             ) : (
-              <div className="grid grid-cols-3 gap-3 sm:grid-cols-4 md:grid-cols-6">
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fill, minmax(118px, 1fr))",
+                  gap: 12,
+                }}
+              >
                 {modalContestants.map((person: any) => {
                   const active = modalSelectedIds.has(person.id);
+
                   return (
                     <button
                       key={person.id}
                       type="button"
                       onClick={() => onToggleContestant(person.id)}
-                      className={`relative aspect-square overflow-hidden rounded-2xl border ${active ? "border-red-300 ring-2 ring-red-300/60" : "border-white/10 opacity-45 grayscale"}`}
+                      style={{
+                        position: "relative",
+                        borderRadius: 16,
+                        overflow: "hidden",
+                        border: active ? "4px solid #fca5a5" : "2px solid #3f3f46",
+                        background: active ? "#7f1d1d" : "#18181b",
+                        padding: 0,
+                        color: "white",
+                        cursor: "pointer",
+                        opacity: active ? 1 : 0.62,
+                      }}
                     >
-                      {person.image_url ? (
-                        <img src={person.image_url} className="h-full w-full object-cover" alt={person.name} />
-                      ) : (
-                        <div className="grid h-full w-full place-items-center bg-zinc-900 p-1 text-center text-xs font-black text-zinc-400">No Image</div>
+                      <div style={{ aspectRatio: "1 / 1", background: "#111827" }}>
+                        {person.image_url ? (
+                          <img
+                            src={person.image_url}
+                            alt={person.name}
+                            style={{
+                              width: "100%",
+                              height: "100%",
+                              objectFit: "cover",
+                              display: "block",
+                              filter: active ? "none" : "grayscale(1)",
+                            }}
+                          />
+                        ) : (
+                          <div
+                            style={{
+                              width: "100%",
+                              height: "100%",
+                              display: "grid",
+                              placeItems: "center",
+                              color: "#94a3b8",
+                              fontSize: 12,
+                              fontWeight: 900,
+                            }}
+                          >
+                            No Image
+                          </div>
+                        )}
+                      </div>
+
+                      <div
+                        style={{
+                          minHeight: 38,
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          padding: "5px 6px",
+                          fontSize: 12,
+                          fontWeight: 950,
+                          lineHeight: 1.05,
+                        }}
+                      >
+                        {person.name}
+                      </div>
+
+                      {active && (
+                        <div
+                          style={{
+                            position: "absolute",
+                            top: 6,
+                            right: 6,
+                            width: 28,
+                            height: 28,
+                            borderRadius: 999,
+                            background: "#dc2626",
+                            display: "grid",
+                            placeItems: "center",
+                            fontWeight: 950,
+                            border: "2px solid white",
+                          }}
+                        >
+                          ✓
+                        </div>
                       )}
-                      <div className="absolute bottom-0 left-0 right-0 truncate bg-black/75 px-1 py-1 text-center text-xs font-black text-white">{person.name}</div>
                     </button>
                   );
                 })}
@@ -184,6 +352,16 @@ function AddCastMembersModal({
     </div>
   );
 }
+
+const modalSmallButtonStyle = {
+  border: "none",
+  borderRadius: 16,
+  background: "#27272a",
+  color: "white",
+  padding: "10px 14px",
+  fontWeight: 900,
+  cursor: "pointer",
+};
 
 export default function TeamBattleSimulator() {
   const router = useRouter();
