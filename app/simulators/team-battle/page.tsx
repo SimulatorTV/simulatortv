@@ -568,7 +568,11 @@ export default function TeamBattleSimulator() {
       <Navbar />
       <style>{`
         body { margin:0; background:#eef6ff; font-family:Arial,sans-serif; }
-        .app { min-height:100vh; padding:18px; text-align:center; background:#eef6ff; }
+        .app { min-height:100vh; padding:18px; text-align:center; background:#eef6ff; color:#111; }
+        .gameArea { color:#111; }
+        .gameArea h1, .gameArea h2, .gameArea h3, .gameArea h4,
+        .gameArea p, .gameArea strong, .gameArea label,
+        .gameArea span, .gameArea div { color:#111; }
         .gameArea button, .gameArea select, .gameArea input { padding:8px 10px; border-radius:10px; border:1px solid #999; }
         .gameArea button { background:white; font-weight:bold; cursor:pointer; }
         .gameArea label { font-weight:bold; margin:0 10px; }
@@ -576,7 +580,7 @@ export default function TeamBattleSimulator() {
         .redMain { background:#ef233c; color:white; border-color:#a30014; }
         .darkMain { background:#1f2937; color:white; border-color:#111827; }
         .teams { display:grid; grid-template-columns:1fr 1fr; gap:18px; max-width:1200px; margin:auto; }
-        .team { background:white; padding:14px; border-radius:18px; box-shadow:0 3px 12px #0002; min-height:260px; }
+        .team { background:white; padding:14px; border-radius:18px; box-shadow:0 3px 12px #0002; min-height:260px; } .team, .team * { color:#111; }
         .teamA { border:5px solid #2f80ed; }
         .teamB { border:5px solid #eb5757; }
         .team input { font-size:22px; font-weight:900; text-align:center; margin-bottom:12px; width:80%; }
@@ -589,14 +593,14 @@ export default function TeamBattleSimulator() {
         .redCard { background:#ffdddd; border-color:#c00; }
         .big { width:190px; }
         .big img, .big .noImg { height:180px; }
-        .planner { max-width:1050px; margin:0 auto 18px; background:white; padding:14px; border-radius:16px; box-shadow:0 3px 12px #0002; }
+        .planner { max-width:1050px; margin:0 auto 18px; background:white; padding:14px; border-radius:16px; box-shadow:0 3px 12px #0002; } .planner, .planner * { color:#111; }
         .weekRow { display:grid; grid-template-columns:70px 1fr 80px 1fr 80px; gap:8px; align-items:center; margin:6px 0; }
         .voteTracker { display:flex; justify-content:center; gap:10px; flex-wrap:wrap; margin:15px; }
         .emptyTracker { background:white; border:2px dashed #999; border-radius:12px; padding:14px 18px; font-weight:bold; color:#555; }
         .trackerBox { background:white; border:2px solid #222; border-radius:12px; padding:6px; font-weight:bold; width:90px; }
         .trackerBox img { width:78px; height:65px; object-fit:cover; border-radius:8px; }
         .voteGridRows { display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)); gap:12px; max-width:1150px; margin:20px auto 0; }
-        .voteRow { display:flex; align-items:center; justify-content:center; gap:10px; background:white; border:2px solid #222; border-radius:14px; padding:8px; font-weight:bold; }
+        .voteRow { display:flex; align-items:center; justify-content:center; gap:10px; background:white; border:2px solid #222; border-radius:14px; padding:8px; font-weight:bold; } .voteRow, .voteRow * { color:#111; }
         .voteRow .card { width:95px; }
         .voteRow .card img, .voteRow .card .noImg { height:82px; }
         .voteRight { width:95px; min-height:100px; display:grid; place-items:center; border-left:1px solid #ccc; padding-left:8px; }
