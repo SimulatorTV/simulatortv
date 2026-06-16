@@ -102,6 +102,15 @@ export default function SimulatorsPage() {
   buttonClass="bg-fuchsia-600 hover:bg-fuchsia-500 text-white"
 />
 
+<SimulatorCard
+  title="Team Battle"
+  description="Two teams face off through challenges, votes, eliminations, custom teams, and team survival."
+  href="/simulators/team-battle"
+  buttonText="Open Team Battle"
+  buttonClass="bg-red-600 hover:bg-red-500 text-white"
+/>
+
+
           <SimulatorCard
   title="The Traitors"
   description="The Traitors simulator"
