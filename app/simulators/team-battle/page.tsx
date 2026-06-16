@@ -548,7 +548,7 @@ export default function TeamBattleSimulator() {
   }
 
   function TeamGrid({ team }: { team: TeamKey }) {
-    return <div className={`team team${team}`} onDragOver={(e) => e.preventDefault()} onDrop={() => draggedId && movePlayer(draggedId, team)}><input value={teamNames[team]} onChange={(e) => setTeamNames((old) => ({ ...old, [team]: e.target.value }))} /><div className="grid">{players.filter((p) => p.team === team && (!p.eliminated || phase === "returnWithElim")).map((p) => <PlayerCard key={p.id} p={p} draggable={phase === "setup" && customTeams} />)}</div></div>;
+    return <div className={`team team${team}`} onDragOver={(e) => e.preventDefault()} onDrop={() => draggedId && movePlayer(draggedId, team)}><input value={teamNames[team]} onChange={(e) => setTeamNames((old) => ({ ...old, [team]: e.target.value }))} /><div className="grid">{players.filter((p) => p.team === team && (!p.eliminated || (phase === "returnWithElim" && p.id === eliminatedId))).map((p) => <PlayerCard key={p.id} p={p} draggable={phase === "setup" && customTeams} />)}</div></div>;
   }
 
   function CastSetupGrid() {
@@ -599,13 +599,13 @@ export default function TeamBattleSimulator() {
         .emptyTracker { background:white; border:2px dashed #999; border-radius:12px; padding:14px 18px; font-weight:bold; color:#555; }
         .trackerBox { background:white; border:2px solid #222; border-radius:12px; padding:6px; font-weight:bold; width:90px; }
         .trackerBox img { width:78px; height:65px; object-fit:cover; border-radius:8px; }
-        .voteGridRows { display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)); gap:12px; max-width:1150px; margin:20px auto 0; }
-        .voteRow { display:flex; align-items:center; justify-content:center; gap:10px; background:white; border:2px solid #222; border-radius:14px; padding:8px; font-weight:bold; } .voteRow, .voteRow * { color:#111; }
-        .voteRow .card { width:95px; }
-        .voteRow .card img, .voteRow .card .noImg { height:82px; }
-        .voteRight { width:95px; min-height:100px; display:grid; place-items:center; border-left:1px solid #ccc; padding-left:8px; }
-        .voteTarget img { width:70px; height:60px; object-fit:cover; border-radius:8px; }
-        .question { font-size:32px; padding:16px; cursor:pointer; }
+        .voteGridRows { display:grid; grid-template-columns:repeat(6, minmax(0, 1fr)); gap:8px; max-width:1440px; margin:16px auto 0; }
+        .voteRow { display:flex; align-items:center; justify-content:center; gap:4px; background:white; border:2px solid #222; border-radius:14px; padding:6px; font-weight:bold; } .voteRow, .voteRow * { color:#111; }
+        .voteRow .card { width:76px; }
+        .voteRow .card img, .voteRow .card .noImg { height:68px; }
+        .voteRight { width:72px; min-height:82px; display:grid; place-items:center; border-left:1px solid #ddd; padding-left:4px; }
+        .voteTarget img { width:54px; height:48px; object-fit:cover; border-radius:8px; }
+        .question { font-size:30px; padding:8px; cursor:pointer; }
         .castSetupGrid { display:flex; flex-wrap:wrap; justify-content:center; gap:10px; max-width:1200px; margin:18px auto; }
         .setupCardWrap { position:relative; }
         .removeBtn { position:absolute; top:-8px; right:-8px; background:#dc2626; color:white; border:none; border-radius:999px; width:26px; height:26px; padding:0; }
@@ -613,7 +613,7 @@ export default function TeamBattleSimulator() {
         .vs { font-size:42px; font-weight:900; }
         .winnerBox { margin:auto; max-width:700px; background:white; border-radius:20px; padding:30px; box-shadow:0 3px 15px #0003; }
         .winnerText { font-size:42px; font-weight:900; color:#d49b00; }
-        @media(max-width:900px){ .voteGridRows { grid-template-columns:1fr; } }
+        @media(max-width:1100px){ .voteGridRows { grid-template-columns:repeat(3, minmax(0, 1fr)); } } @media(max-width:700px){ .voteGridRows { grid-template-columns:1fr; } }
         @media(max-width:750px){ .teams { grid-template-columns:1fr; } .weekRow { grid-template-columns:1fr; } .card { width:82px; } .card img, .card .noImg { height:75px; } }
       `}</style>
 
