@@ -128,6 +128,7 @@ export default function EnduranceSim() {
   const [preGameState, setPreGameState] = useState(null);
   const [targetBias, setTargetBias] = useState({});
   const [donationBias, setDonationBias] = useState({});
+  const [replayHistory, setReplayHistory] = useState([]);
 
   useEffect(() => {
     const onResize = () => setIsMobile(window.innerWidth < 640);
@@ -139,6 +140,55 @@ export default function EnduranceSim() {
   useEffect(() => {
     loadSavedCasts();
   }, []);
+
+
+  useEffect(() => {
+    if (phase === "cast" && teams.length === 0 && players.length === 0) return;
+
+    setReplayHistory((current) => {
+      const snapshot = {
+        phase,
+        episode,
+        players,
+        activeCast,
+        teams,
+        missionWinner,
+        placements,
+        log,
+        templeState,
+        pieceTransferState,
+        finalTempleState,
+        preGameState,
+        teamPieces,
+        winner,
+      };
+
+      const last = current[current.length - 1];
+      const lastKey = last
+        ? `${last.phase}-${last.episode}-${last.log?.join("|")}-${last.teams?.length}-${last.placements?.length}-${last.winner?.name || ""}`
+        : "";
+      const nextKey = `${snapshot.phase}-${snapshot.episode}-${snapshot.log?.join("|")}-${snapshot.teams?.length}-${snapshot.placements?.length}-${snapshot.winner?.name || ""}`;
+
+      if (lastKey === nextKey) return current;
+
+      return [...current, snapshot];
+    });
+  }, [
+    phase,
+    episode,
+    players,
+    activeCast,
+    teams,
+    missionWinner,
+    placements,
+    log,
+    templeState,
+    pieceTransferState,
+    finalTempleState,
+    preGameState,
+    teamPieces,
+    winner,
+  ]);
 
   async function loadSavedCasts() {
     const { data: userData } = await supabase.auth.getUser();
@@ -283,6 +333,7 @@ export default function EnduranceSim() {
     setSeasonSummary("");
     setIsPublicSeason(true);
     setSavingSeason(false);
+    setReplayHistory([]);
   }
 
   function addTargetBias(fromTeamName, toTeamName, amount = 1) {
@@ -990,6 +1041,7 @@ export default function EnduranceSim() {
           placements,
           winner,
           log,
+          history: replayHistory,
           teamPieces,
           episode,
         },

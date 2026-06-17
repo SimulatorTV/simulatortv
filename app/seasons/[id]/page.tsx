@@ -13,6 +13,7 @@ import RedneckIslandReplayScreen from "../../../components/redneck-island/Rednec
 import FreeAgentsReplayScreen from "../../../components/free-agents/FreeAgentsReplayScreen";
 import CallOutReplayScreen from "../../../components/call-out/CallOutReplayScreen";
 import TrioReplayScreen from "../../../components/trio/TrioReplayScreen";
+import EnduranceReplayScreen from "../../../components/endurance/EnduranceReplayScreen";
 import { supabase } from "../../../lib/supabase";
 
 function getPlayersFromEntry(entry: any) {
@@ -66,6 +67,9 @@ function getStartingPlayersFromSavedSeason(season, timeline, bigBrotherRounds) {
     data.startingCast,
     data.shuffledCast,
     data.players,
+    data.teams?.flatMap((team) => team.members || []),
+    data.history?.find((entry) => entry?.players?.length)?.players,
+    data.history?.find((entry) => entry?.teams?.length)?.teams?.flatMap((team) => team.members || []),
     data.teams?.flatMap((team) => team.members || []),
     data.finalWinners?.members,
     data.preview?.startingCast,
@@ -677,6 +681,9 @@ export default function SavedSeasonReplayPage() {
   const isTrio =
     season?.simulator_type?.toLowerCase().includes("trio");
 
+  const isEndurance =
+    season?.simulator_type?.toLowerCase().includes("endurance");
+
   const timeline = season?.data_json?.season || [];
   const bigBrotherRounds = season?.data_json?.seasonFlow?.rounds || [];
 
@@ -771,6 +778,19 @@ export default function SavedSeasonReplayPage() {
       <CallOutReplayScreen
         history={season?.data_json?.history || []}
         winner={season?.data_json?.winner}
+        onExit={() => {
+          setStarted(false);
+          setStepIndex(0);
+        }}
+      />
+    );
+  }
+
+  if (started && isEndurance) {
+    return (
+      <EnduranceReplayScreen
+        history={season?.data_json?.history || []}
+        seasonData={season?.data_json || {}}
         onExit={() => {
           setStarted(false);
           setStepIndex(0);
@@ -910,7 +930,9 @@ export default function SavedSeasonReplayPage() {
                     ? !(season?.data_json?.history?.length)
                     : isTrio
                       ? !(season?.data_json?.seasonSteps?.length)
-                      : !timeline.length
+                      : isEndurance
+                        ? !(season?.data_json?.history?.length || season?.data_json?.winner)
+                        : !timeline.length
               }
               className="bg-blue-600 hover:bg-blue-500 disabled:opacity-40 px-8 py-4 rounded-2xl font-black text-lg"
             >
