@@ -36,6 +36,23 @@ function getImage(player: any) {
   return player?.img || player?.image || player?.image_url || "";
 }
 
+function pickWinnerFromVoteCounts(votes: Record<string, string>) {
+  const counts: Record<string, number> = {};
+
+  Object.values(votes).forEach((id) => {
+    counts[id] = (counts[id] || 0) + 1;
+  });
+
+  const values = Object.values(counts);
+  if (values.length === 0) return null;
+
+  const high = Math.max(...values);
+  const tied = Object.keys(counts).filter((id) => counts[id] === high);
+
+  return { high, tied };
+}
+
+
 function AddCastMembersModal({
   casts,
   modalCastId,
@@ -507,24 +524,71 @@ export default function TeamBattleSimulator() {
   }
 
   function finishWinnerVote() {
-    const counts: Record<string, number> = {}; Object.values(winnerVotes).forEach((id) => { counts[id] = (counts[id] || 0) + 1; });
-    const high = Math.max(...Object.values(counts)); const tied = Object.keys(counts).filter((id) => counts[id] === high);
-    if (tied.length > 1) { const voters = players.filter((p) => p.team === winningTeam && !p.eliminated); setWinnerVoteOptions(tied); setWinnerVotes(makeVote(voters, tied)); setWinnerRevealed({}); setWinnerRevote((r) => r + 1); return; }
-    setWinnerPick(tied[0]); setupLoserVote(tied[0], currentFormat === "team-vs-self"); setPhase("loserVote");
+    const result = pickWinnerFromVoteCounts(winnerVotes);
+    if (!result) return;
+
+    const tied = result.tied;
+
+    if (tied.length > 1) {
+      if (winnerRevote >= 5) {
+        const randomPick = rand(tied);
+        setWinnerPick(randomPick);
+        setupLoserVote(randomPick, currentFormat === "team-vs-self");
+        setPhase("loserVote");
+        return;
+      }
+
+      const voters = players.filter((p) => p.team === winningTeam && !p.eliminated);
+      setWinnerVoteOptions(tied);
+      setWinnerVotes(makeVote(voters, tied));
+      setWinnerRevealed({});
+      setWinnerRevote((r) => r + 1);
+      return;
+    }
+
+    setWinnerPick(tied[0]);
+    setupLoserVote(tied[0], currentFormat === "team-vs-self");
+    setPhase("loserVote");
   }
 
   function setupLoserVote(blockedPick: string, hasBlockedPlayer: boolean) {
     if (!losingTeam) return;
+
     const voters = players.filter((p) => p.team === losingTeam && !p.eliminated);
-    const options = voters.filter((p) => !hasBlockedPlayer || p.id !== blockedPick).map((p) => p.id);
-    setLoserVoteOptions(options); setLoserVotes(makeVote(voters.filter((p) => p.id !== blockedPick || !hasBlockedPlayer), options)); setLoserRevealed({}); setLoserPick(null); setLoserRevote(0);
+    const options = voters
+      .filter((p) => !hasBlockedPlayer || p.id !== blockedPick)
+      .map((p) => p.id);
+
+    setLoserVoteOptions(options);
+    setLoserVotes(makeVote(voters, options));
+    setLoserRevealed({});
+    setLoserPick(null);
+    setLoserRevote(0);
   }
 
   function finishLoserVote() {
-    const counts: Record<string, number> = {}; Object.values(loserVotes).forEach((id) => { counts[id] = (counts[id] || 0) + 1; });
-    const high = Math.max(...Object.values(counts)); const tied = Object.keys(counts).filter((id) => counts[id] === high);
-    if (tied.length > 1) { const voters = players.filter((p) => p.team === losingTeam && !p.eliminated && !(currentFormat === "team-vs-self" && p.id === winnerPick)); setLoserVoteOptions(tied); setLoserVotes(makeVote(voters, tied)); setLoserRevealed({}); setLoserRevote((r) => r + 1); return; }
-    setLoserPick(tied[0]); setPhase("elimination");
+    const result = pickWinnerFromVoteCounts(loserVotes);
+    if (!result) return;
+
+    const tied = result.tied;
+
+    if (tied.length > 1) {
+      if (loserRevote >= 5) {
+        setLoserPick(rand(tied));
+        setPhase("elimination");
+        return;
+      }
+
+      const voters = players.filter((p) => p.team === losingTeam && !p.eliminated);
+      setLoserVoteOptions(tied);
+      setLoserVotes(makeVote(voters, tied));
+      setLoserRevealed({});
+      setLoserRevote((r) => r + 1);
+      return;
+    }
+
+    setLoserPick(tied[0]);
+    setPhase("elimination");
   }
 
   function revealElimination() { if (winnerPick && loserPick) { setEliminatedId(rand([winnerPick, loserPick])); setPhase("result"); } }
@@ -556,7 +620,7 @@ export default function TeamBattleSimulator() {
   }
 
   function VoteRevealRow({ voter, target, revealed, blocked, reveal }: { voter: Player; target: Player | undefined; revealed: boolean; blocked?: boolean; reveal: () => void; }) {
-    return <div className={`voteRow ${blocked ? "redCard" : ""}`}><PlayerCard p={voter} /><div className="voteRight">{blocked ? <strong>Already Sent In</strong> : revealed && target ? <div className="voteTarget"><img src={getImage(target)} alt={target.name} /><div>{target.name}</div></div> : <div className="question" onClick={reveal}>?</div>}</div></div>;
+    return <div className={`voteRow ${blocked ? "redCard" : ""}`}><div><PlayerCard p={voter} />{blocked && <div className="sentInTag">Already Sent In</div>}</div><div className="voteRight">{revealed && target ? <div className="voteTarget"><img src={getImage(target)} alt={target.name} /><div>{target.name}</div></div> : <div className="question" onClick={reveal}>?</div>}</div></div>;
   }
 
   const winnerVoteCounts = voteCounts(winnerVotes, winnerRevealed);
@@ -605,7 +669,7 @@ export default function TeamBattleSimulator() {
         .voteRow .card img, .voteRow .card .noImg { height:68px; }
         .voteRight { width:72px; min-height:82px; display:grid; place-items:center; border-left:1px solid #ddd; padding-left:4px; }
         .voteTarget img { width:54px; height:48px; object-fit:cover; border-radius:8px; }
-        .question { font-size:30px; padding:8px; cursor:pointer; }
+        .question { font-size:30px; padding:8px; cursor:pointer; } .sentInTag { margin-top:4px; font-size:10px; font-weight:900; color:#991b1b !important; }
         .castSetupGrid { display:flex; flex-wrap:wrap; justify-content:center; gap:10px; max-width:1200px; margin:18px auto; }
         .setupCardWrap { position:relative; }
         .removeBtn { position:absolute; top:-8px; right:-8px; background:#dc2626; color:white; border:none; border-radius:999px; width:26px; height:26px; padding:0; }
@@ -626,8 +690,8 @@ export default function TeamBattleSimulator() {
 
       {phase === "weekStart" && <><h2>Week {week}</h2><h3>{currentFormat === "team-vs-team" ? "Team vs Team" : "Team vs Self"}</h3><div className="teams"><TeamGrid team="A" /><TeamGrid team="B" /></div><br /><button onClick={beginChallenge}>Advance to Challenge</button></>}
       {phase === "challenge" && winningTeam && <><h2>Challenge Result</h2><h3>{teamNames[winningTeam]} wins safety!</h3><div className="teams"><TeamGrid team={winningTeam} /></div><br /><button onClick={setupWinnerVote}>Advance to Voting</button></>}
-      {phase === "winnerVote" && winningTeam && <><h2>{teamNames[winningTeam]} Vote</h2>{winnerRevote > 0 && <h3>Revote between tied players</h3>}<VoteTracker optionIds={winnerVoteOptions} counts={winnerVoteCounts} /><button onClick={() => setWinnerRevealed(Object.fromEntries(Object.keys(winnerVotes).map((id) => [id, true])))}>Reveal All</button><div className="voteGridRows">{players.filter((p) => p.team === winningTeam && !p.eliminated).map((p) => <VoteRevealRow key={p.id} voter={p} target={getPlayer(winnerVotes[p.id])} revealed={!!winnerRevealed[p.id]} reveal={() => setWinnerRevealed((old) => ({ ...old, [p.id]: true }))} />)}</div><br /><button onClick={finishWinnerVote}>Advance</button></>}
-      {phase === "loserVote" && losingTeam && <><h2>{teamNames[losingTeam]} Vote</h2>{loserRevote > 0 && <h3>Revote between tied players</h3>}<VoteTracker optionIds={loserVoteOptions} counts={loserVoteCounts} /><button onClick={() => setLoserRevealed(Object.fromEntries(Object.keys(loserVotes).map((id) => [id, true])))}>Reveal All</button><div className="voteGridRows">{players.filter((p) => p.team === losingTeam && !p.eliminated).map((p) => { const blocked = currentFormat === "team-vs-self" && p.id === winnerPick; return <VoteRevealRow key={p.id} voter={p} target={getPlayer(loserVotes[p.id])} blocked={blocked} revealed={!!loserRevealed[p.id]} reveal={() => setLoserRevealed((old) => ({ ...old, [p.id]: true }))} />; })}</div><br /><button onClick={finishLoserVote}>Advance to Elimination</button></>}
+      {phase === "winnerVote" && winningTeam && <><h2>{teamNames[winningTeam]} Vote</h2>{winnerRevote > 0 && <h3>Revote between tied players {winnerRevote >= 5 ? "(next tie becomes random)" : ""}</h3>}<VoteTracker optionIds={winnerVoteOptions} counts={winnerVoteCounts} /><button onClick={() => setWinnerRevealed(Object.fromEntries(Object.keys(winnerVotes).map((id) => [id, true])))}>Reveal All</button><div className="voteGridRows">{players.filter((p) => p.team === winningTeam && !p.eliminated).map((p) => <VoteRevealRow key={p.id} voter={p} target={getPlayer(winnerVotes[p.id])} revealed={!!winnerRevealed[p.id]} reveal={() => setWinnerRevealed((old) => ({ ...old, [p.id]: true }))} />)}</div><br /><button onClick={finishWinnerVote}>Advance</button></>}
+      {phase === "loserVote" && losingTeam && <><h2>{teamNames[losingTeam]} Vote</h2>{loserRevote > 0 && <h3>Revote between tied players {loserRevote >= 5 ? "(next tie becomes random)" : ""}</h3>}<VoteTracker optionIds={loserVoteOptions} counts={loserVoteCounts} /><button onClick={() => setLoserRevealed(Object.fromEntries(Object.keys(loserVotes).map((id) => [id, true])))}>Reveal All</button><div className="voteGridRows">{players.filter((p) => p.team === losingTeam && !p.eliminated).map((p) => { const blocked = currentFormat === "team-vs-self" && p.id === winnerPick; return <VoteRevealRow key={p.id} voter={p} target={getPlayer(loserVotes[p.id])} blocked={blocked} revealed={!!loserRevealed[p.id]} reveal={() => setLoserRevealed((old) => ({ ...old, [p.id]: true }))} />; })}</div><br /><button onClick={finishLoserVote}>Advance to Elimination</button></>}
       {phase === "elimination" && <><h2>Elimination Matchup</h2><div className="matchup">{matchupPlayers.map((p, i) => <React.Fragment key={p.id}><PlayerCard p={p} big />{i === 0 && <div className="vs">VS</div>}</React.Fragment>)}</div><button onClick={revealElimination}>Reveal Result</button></>}
       {phase === "result" && <><h2>Elimination Result</h2><div className="matchup">{matchupPlayers.map((p, i) => <React.Fragment key={p.id}><PlayerCard p={p} big faded={p.id === eliminatedId} />{i === 0 && <div className="vs">VS</div>}</React.Fragment>)}</div><button onClick={returnToTeams}>Return to Teams</button></>}
       {phase === "returnWithElim" && <><h2>Week {week} Complete</h2><div className="teams"><TeamGrid team="A" /><TeamGrid team="B" /></div><br /><button onClick={nextWeekOrWinner}>Advance</button></>}
