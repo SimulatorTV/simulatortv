@@ -518,9 +518,42 @@ export default function TeamBattleSimulator() {
 
   function setupWinnerVote() {
     if (!winningTeam || !losingTeam) return;
-    const voters = players.filter((p) => p.team === winningTeam && !p.eliminated);
-    const options = currentFormat === "team-vs-team" ? players.filter((p) => p.team === winningTeam && !p.eliminated).map((p) => p.id) : players.filter((p) => p.team === losingTeam && !p.eliminated).map((p) => p.id);
-    setWinnerVoteOptions(options); setWinnerVotes(makeVote(voters, options)); setWinnerRevealed({}); setWinnerPick(null); setWinnerRevote(0); setPhase("winnerVote");
+
+    const winningPlayers = players.filter((p) => p.team === winningTeam && !p.eliminated);
+    const losingPlayers = players.filter((p) => p.team === losingTeam && !p.eliminated);
+    const voters = winningPlayers;
+
+    if (currentFormat === "team-vs-self" && winningPlayers.length === 1 && losingPlayers.length === 1) {
+      setWinnerPick(winningPlayers[0].id);
+      setLoserPick(losingPlayers[0].id);
+      setPhase("elimination");
+      return;
+    }
+
+    if (currentFormat === "team-vs-self" && losingPlayers.length === 1 && winningPlayers.length > 1) {
+      setLoserPick(losingPlayers[0].id);
+      const options = winningPlayers.map((p) => p.id);
+      setWinnerVoteOptions(options);
+      setWinnerVotes(makeVote(voters, options));
+      setWinnerRevealed({});
+      setWinnerPick(null);
+      setWinnerRevote(0);
+      setPhase("winnerVote");
+      return;
+    }
+
+    const options =
+      currentFormat === "team-vs-team"
+        ? winningPlayers.map((p) => p.id)
+        : losingPlayers.map((p) => p.id);
+
+    setWinnerVoteOptions(options);
+    setWinnerVotes(makeVote(voters, options));
+    setWinnerRevealed({});
+    setWinnerPick(null);
+    setLoserPick(null);
+    setWinnerRevote(0);
+    setPhase("winnerVote");
   }
 
   function finishWinnerVote() {
@@ -528,13 +561,29 @@ export default function TeamBattleSimulator() {
     if (!result) return;
 
     const tied = result.tied;
+    const losingPlayers = players.filter((p) => p.team === losingTeam && !p.eliminated);
+    const winningPlayers = players.filter((p) => p.team === winningTeam && !p.eliminated);
+    const loneLosingTeamVsSelf =
+      currentFormat === "team-vs-self" &&
+      losingPlayers.length === 1 &&
+      winningPlayers.length > 1;
+
+    function lockWinnerPick(pickId: string) {
+      setWinnerPick(pickId);
+
+      if (loneLosingTeamVsSelf) {
+        setLoserPick(losingPlayers[0].id);
+        setPhase("elimination");
+        return;
+      }
+
+      setupLoserVote(pickId, currentFormat === "team-vs-self");
+      setPhase("loserVote");
+    }
 
     if (tied.length > 1) {
       if (winnerRevote >= 5) {
-        const randomPick = rand(tied);
-        setWinnerPick(randomPick);
-        setupLoserVote(randomPick, currentFormat === "team-vs-self");
-        setPhase("loserVote");
+        lockWinnerPick(rand(tied));
         return;
       }
 
@@ -546,9 +595,7 @@ export default function TeamBattleSimulator() {
       return;
     }
 
-    setWinnerPick(tied[0]);
-    setupLoserVote(tied[0], currentFormat === "team-vs-self");
-    setPhase("loserVote");
+    lockWinnerPick(tied[0]);
   }
 
   function setupLoserVote(blockedPick: string, hasBlockedPlayer: boolean) {
@@ -690,7 +737,7 @@ export default function TeamBattleSimulator() {
 
       {phase === "weekStart" && <><h2>Week {week}</h2><h3>{currentFormat === "team-vs-team" ? "Team vs Team" : "Team vs Self"}</h3><div className="teams"><TeamGrid team="A" /><TeamGrid team="B" /></div><br /><button onClick={beginChallenge}>Advance to Challenge</button></>}
       {phase === "challenge" && winningTeam && <><h2>Challenge Result</h2><h3>{teamNames[winningTeam]} wins safety!</h3><div className="teams"><TeamGrid team={winningTeam} /></div><br /><button onClick={setupWinnerVote}>Advance to Voting</button></>}
-      {phase === "winnerVote" && winningTeam && <><h2>{teamNames[winningTeam]} Vote</h2>{winnerRevote > 0 && <h3>Revote between tied players {winnerRevote >= 5 ? "(next tie becomes random)" : ""}</h3>}<VoteTracker optionIds={winnerVoteOptions} counts={winnerVoteCounts} /><button onClick={() => setWinnerRevealed(Object.fromEntries(Object.keys(winnerVotes).map((id) => [id, true])))}>Reveal All</button><div className="voteGridRows">{players.filter((p) => p.team === winningTeam && !p.eliminated).map((p) => <VoteRevealRow key={p.id} voter={p} target={getPlayer(winnerVotes[p.id])} revealed={!!winnerRevealed[p.id]} reveal={() => setWinnerRevealed((old) => ({ ...old, [p.id]: true }))} />)}</div><br /><button onClick={finishWinnerVote}>Advance</button></>}
+      {phase === "winnerVote" && winningTeam && <><h2>{teamNames[winningTeam]} Vote</h2>{currentFormat === "team-vs-self" && losingTeam && players.filter((p) => p.team === losingTeam && !p.eliminated).length === 1 && players.filter((p) => p.team === winningTeam && !p.eliminated).length > 1 && <h3>The team of 1 lost, so this becomes a Team vs Team elimination.</h3>}{winnerRevote > 0 && <h3>Revote between tied players {winnerRevote >= 5 ? "(next tie becomes random)" : ""}</h3>}<VoteTracker optionIds={winnerVoteOptions} counts={winnerVoteCounts} /><button onClick={() => setWinnerRevealed(Object.fromEntries(Object.keys(winnerVotes).map((id) => [id, true])))}>Reveal All</button><div className="voteGridRows">{players.filter((p) => p.team === winningTeam && !p.eliminated).map((p) => <VoteRevealRow key={p.id} voter={p} target={getPlayer(winnerVotes[p.id])} revealed={!!winnerRevealed[p.id]} reveal={() => setWinnerRevealed((old) => ({ ...old, [p.id]: true }))} />)}</div><br /><button onClick={finishWinnerVote}>Advance</button></>}
       {phase === "loserVote" && losingTeam && <><h2>{teamNames[losingTeam]} Vote</h2>{loserRevote > 0 && <h3>Revote between tied players {loserRevote >= 5 ? "(next tie becomes random)" : ""}</h3>}<VoteTracker optionIds={loserVoteOptions} counts={loserVoteCounts} /><button onClick={() => setLoserRevealed(Object.fromEntries(Object.keys(loserVotes).map((id) => [id, true])))}>Reveal All</button><div className="voteGridRows">{players.filter((p) => p.team === losingTeam && !p.eliminated).map((p) => { const blocked = currentFormat === "team-vs-self" && p.id === winnerPick; return <VoteRevealRow key={p.id} voter={p} target={getPlayer(loserVotes[p.id])} blocked={blocked} revealed={!!loserRevealed[p.id]} reveal={() => setLoserRevealed((old) => ({ ...old, [p.id]: true }))} />; })}</div><br /><button onClick={finishLoserVote}>Advance to Elimination</button></>}
       {phase === "elimination" && <><h2>Elimination Matchup</h2><div className="matchup">{matchupPlayers.map((p, i) => <React.Fragment key={p.id}><PlayerCard p={p} big />{i === 0 && <div className="vs">VS</div>}</React.Fragment>)}</div><button onClick={revealElimination}>Reveal Result</button></>}
       {phase === "result" && <><h2>Elimination Result</h2><div className="matchup">{matchupPlayers.map((p, i) => <React.Fragment key={p.id}><PlayerCard p={p} big faded={p.id === eliminatedId} />{i === 0 && <div className="vs">VS</div>}</React.Fragment>)}</div><button onClick={returnToTeams}>Return to Teams</button></>}
