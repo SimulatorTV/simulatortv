@@ -499,7 +499,37 @@ export default function TeamBattleSimulator() {
 
   function clearRoster() { if (confirm("Clear Team Battle roster?")) setPlayers([]); }
   function removePlayer(id: string) { if (phase === "setup") setPlayers((old) => old.filter((p) => p.id !== id)); }
-  function movePlayer(id: string, team: TeamKey) { if (customTeams) setPlayers((old) => old.map((p) => p.id === id ? { ...p, team } : p)); }
+  function movePlayer(id: string, team: TeamKey) {
+    if (!customTeams) return;
+
+    setPlayers((old) =>
+      old.map((p) => (p.id === id ? { ...p, team } : p))
+    );
+
+    setDraggedId(null);
+  }
+
+  function swapPlayers(dragId: string | null, targetId: string) {
+    if (!customTeams || !dragId || dragId === targetId) {
+      setDraggedId(null);
+      return;
+    }
+
+    setPlayers((old) => {
+      const dragged = old.find((p) => p.id === dragId);
+      const target = old.find((p) => p.id === targetId);
+
+      if (!dragged || !target) return old;
+
+      return old.map((p) => {
+        if (p.id === dragId) return { ...p, team: target.team };
+        if (p.id === targetId) return { ...p, team: dragged.team };
+        return p;
+      });
+    });
+
+    setDraggedId(null);
+  }
 
   function startGame() {
     if (players.length < 2) return;
@@ -649,8 +679,34 @@ export default function TeamBattleSimulator() {
 
   function voteCounts(votes: Record<string, string>, revealed: Record<string, boolean>) { const counts: Record<string, number> = {}; Object.entries(votes).forEach(([voter, target]) => { if (revealed[voter]) counts[target] = (counts[target] || 0) + 1; }); return counts; }
 
-  function PlayerCard({ p, draggable = false, faded = false, red = false, big = false }: { p: Player; draggable?: boolean; faded?: boolean; red?: boolean; big?: boolean; }) {
-    return <div className={`card ${p.eliminated || faded ? "out" : ""} ${red ? "redCard" : ""} ${big ? "big" : ""}`} draggable={draggable} onDragStart={() => draggable && setDraggedId(p.id)}>{getImage(p) ? <img src={getImage(p)} alt={p.name} /> : <div className="noImg">No Image</div>}<div>{p.name}</div></div>;
+  function PlayerCard({ p, draggable = false, faded = false, red = false, big = false, onDropOnCard = null }: { p: Player; draggable?: boolean; faded?: boolean; red?: boolean; big?: boolean; onDropOnCard?: any; }) {
+    return (
+      <div
+        className={`card ${p.eliminated || faded ? "out" : ""} ${red ? "redCard" : ""} ${big ? "big" : ""} ${draggedId === p.id ? "draggingCard" : ""}`}
+        draggable={draggable}
+        onDragStart={(e) => {
+          if (!draggable) return;
+          setDraggedId(p.id);
+          e.dataTransfer.effectAllowed = "move";
+        }}
+        onDragEnd={() => setDraggedId(null)}
+        onDragOver={(e) => {
+          if (draggable && onDropOnCard) {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = "move";
+          }
+        }}
+        onDrop={(e) => {
+          if (draggable && onDropOnCard) {
+            e.preventDefault();
+            onDropOnCard(p.id);
+          }
+        }}
+      >
+        {getImage(p) ? <img src={getImage(p)} alt={p.name} /> : <div className="noImg">No Image</div>}
+        <div>{p.name}</div>
+      </div>
+    );
   }
 
   function VoteTracker({ optionIds, counts }: { optionIds: string[]; counts: Record<string, number>; }) {
@@ -659,7 +715,36 @@ export default function TeamBattleSimulator() {
   }
 
   function TeamGrid({ team }: { team: TeamKey }) {
-    return <div className={`team team${team}`} onDragOver={(e) => e.preventDefault()} onDrop={() => draggedId && movePlayer(draggedId, team)}><input value={teamNames[team]} onChange={(e) => setTeamNames((old) => ({ ...old, [team]: e.target.value }))} /><div className="grid">{players.filter((p) => p.team === team && (!p.eliminated || (phase === "returnWithElim" && p.id === eliminatedId))).map((p) => <PlayerCard key={p.id} p={p} draggable={phase === "setup" && customTeams} />)}</div></div>;
+    return (
+      <div
+        className={`team team${team}`}
+        onDragOver={(e) => {
+          if (phase === "setup" && customTeams) e.preventDefault();
+        }}
+        onDrop={(e) => {
+          e.preventDefault();
+          if (draggedId) movePlayer(draggedId, team);
+        }}
+      >
+        <input
+          value={teamNames[team]}
+          onChange={(e) => setTeamNames((old) => ({ ...old, [team]: e.target.value }))}
+        />
+
+        <div className="grid">
+          {players
+            .filter((p) => p.team === team && (!p.eliminated || (phase === "returnWithElim" && p.id === eliminatedId)))
+            .map((p) => (
+              <PlayerCard
+                key={p.id}
+                p={p}
+                draggable={phase === "setup" && customTeams}
+                onDropOnCard={(targetId: string) => swapPlayers(draggedId, targetId)}
+              />
+            ))}
+        </div>
+      </div>
+    );
   }
 
   function CastSetupGrid() {
@@ -685,18 +770,18 @@ export default function TeamBattleSimulator() {
         .gameArea p, .gameArea strong, .gameArea label,
         .gameArea span, .gameArea div { color:#111; }
         .gameArea button, .gameArea select, .gameArea input { padding:8px 10px; border-radius:10px; border:1px solid #999; }
-        .gameArea button { background:white; font-weight:bold; cursor:pointer; }
+        .gameArea button { background:white; color:#111 !important; font-weight:bold; cursor:pointer; }
         .gameArea label { font-weight:bold; margin:0 10px; }
         .topButtons { display:flex; justify-content:center; gap:10px; flex-wrap:wrap; margin:12px 0 18px; }
-        .redMain { background:#ef233c; color:white; border-color:#a30014; }
-        .darkMain { background:#1f2937; color:white; border-color:#111827; }
+        .redMain { background:#ef233c; color:#111 !important; border-color:#a30014; }
+        .darkMain { background:#1f2937; color:#111 !important; border-color:#111827; }
         .teams { display:grid; grid-template-columns:1fr 1fr; gap:18px; max-width:1200px; margin:auto; }
         .team { background:white; padding:14px; border-radius:18px; box-shadow:0 3px 12px #0002; min-height:260px; } .team, .team * { color:#111; }
         .teamA { border:5px solid #2f80ed; }
         .teamB { border:5px solid #eb5757; }
         .team input { font-size:22px; font-weight:900; text-align:center; margin-bottom:12px; width:80%; }
         .grid { display:flex; flex-wrap:wrap; justify-content:center; gap:10px; }
-        .card { width:105px; background:white; border:2px solid #222; border-radius:12px; overflow:hidden; font-weight:bold; transition:all .7s ease; }
+        .card { width:105px; background:white; border:2px solid #222; border-radius:12px; overflow:hidden; font-weight:bold; transition:transform .18s ease, opacity .18s ease, box-shadow .18s ease, filter .45s ease; } .card[draggable="true"] { cursor:grab; } .card[draggable="true"]:active { cursor:grabbing; } .draggingCard { opacity:.45; transform:scale(.94); box-shadow:0 0 0 4px rgba(239,35,60,.35); }
         .card img, .noImg { width:100%; height:95px; object-fit:cover; display:block; }
         .noImg { background:#111827; color:#94a3b8; display:grid; place-items:center; font-size:12px; }
         .card div { min-height:34px; padding:5px; display:flex; align-items:center; justify-content:center; font-size:13px; }
@@ -705,7 +790,7 @@ export default function TeamBattleSimulator() {
         .big { width:190px; }
         .big img, .big .noImg { height:180px; }
         .planner { max-width:1050px; margin:0 auto 18px; background:white; padding:14px; border-radius:16px; box-shadow:0 3px 12px #0002; } .planner, .planner * { color:#111; }
-        .weekRow { display:grid; grid-template-columns:70px 1fr 80px 1fr 80px; gap:8px; align-items:center; margin:6px 0; }
+        .weekRow { display:grid; grid-template-columns:70px 1fr 80px 1fr 80px; gap:8px; align-items:center; margin:6px 0; } .teamNameRow { display:flex; justify-content:center; gap:12px; flex-wrap:wrap; } .teamNameRow input { min-width:220px; font-size:18px; font-weight:900; text-align:center; }
         .voteTracker { display:flex; justify-content:center; gap:10px; flex-wrap:wrap; margin:15px; }
         .emptyTracker { background:white; border:2px dashed #999; border-radius:12px; padding:14px 18px; font-weight:bold; color:#555; }
         .trackerBox { background:white; border:2px solid #222; border-radius:12px; padding:6px; font-weight:bold; width:90px; }
@@ -733,7 +818,7 @@ export default function TeamBattleSimulator() {
       <div className="gameArea">
         <h1>Team Battle</h1>
 
-      {phase === "setup" && <><div className="topButtons"><button className="redMain" onClick={openAddCastModal}>Add Cast Members</button>{players.length > 0 && <button className="darkMain" onClick={clearRoster}>Clear Roster</button>}<Link href="/custom-casts"><button className="darkMain">Manage Casts</button></Link></div><CastSetupGrid /><div className="planner"><h2>Settings</h2><label><input type="checkbox" checked={customTeams} onChange={(e) => setCustomTeams(e.target.checked)} /> Custom Teams</label></div><div className="planner"><h2>Weekly Planner</h2><div><select onChange={(e) => setAllFormats(e.target.value as Format)}><option value="team-vs-team">Team vs Team</option><option value="team-vs-self">Team vs Self</option></select> <button type="button">Set All Formats</button> <select disabled><option>No Challenge</option></select> <button type="button">Set All Daily Challenges</button></div>{planner.slice(0, Math.max(maxWeeks, 1)).map((w, i) => <div className="weekRow" key={i}><strong>Week {i + 1}</strong><select value={w.format} disabled={w.locked} onChange={(e) => setPlanner((old) => old.map((x, idx) => idx === i ? { ...x, format: e.target.value as Format } : x))}><option value="team-vs-team">Team vs Team</option><option value="team-vs-self">Team vs Self</option></select><button onClick={() => setPlanner((old) => old.map((x, idx) => idx === i ? { ...x, locked: !x.locked } : x))}>{w.locked ? "Locked" : "Lock"}</button><select disabled><option>No Challenge</option></select><button disabled>Lock</button></div>)}</div>{customTeams ? <><h2>Drag Players Into Custom Teams</h2><div className="teams"><TeamGrid team="A" /><TeamGrid team="B" /></div></> : <h2>Teams will randomize when the game starts</h2>}<br /><button className="redMain" onClick={startGame} disabled={players.length < 2}>Start Game</button></>}
+      {phase === "setup" && <><div className="topButtons"><button className="redMain" onClick={openAddCastModal}>Add Cast Members</button>{players.length > 0 && <button className="darkMain" onClick={clearRoster}>Clear Roster</button>}<Link href="/custom-casts"><button className="darkMain">Manage Casts</button></Link></div><CastSetupGrid /><div className="planner"><h2>Settings</h2><label><input type="checkbox" checked={customTeams} onChange={(e) => setCustomTeams(e.target.checked)} /> Custom Teams</label></div><div className="planner"><h2>Team Names</h2><div className="teamNameRow"><input value={teamNames.A} onChange={(e) => setTeamNames((old) => ({ ...old, A: e.target.value }))} placeholder="Team A name" /><input value={teamNames.B} onChange={(e) => setTeamNames((old) => ({ ...old, B: e.target.value }))} placeholder="Team B name" /></div></div><div className="planner"><h2>Weekly Planner</h2><div><select onChange={(e) => setAllFormats(e.target.value as Format)}><option value="team-vs-team">Team vs Team</option><option value="team-vs-self">Team vs Self</option></select> <button type="button">Set All Formats</button> <select disabled><option>No Challenge</option></select> <button type="button">Set All Daily Challenges</button></div>{planner.slice(0, Math.max(maxWeeks, 1)).map((w, i) => <div className="weekRow" key={i}><strong>Week {i + 1}</strong><select value={w.format} disabled={w.locked} onChange={(e) => setPlanner((old) => old.map((x, idx) => idx === i ? { ...x, format: e.target.value as Format } : x))}><option value="team-vs-team">Team vs Team</option><option value="team-vs-self">Team vs Self</option></select><button onClick={() => setPlanner((old) => old.map((x, idx) => idx === i ? { ...x, locked: !x.locked } : x))}>{w.locked ? "Locked" : "Lock"}</button><select disabled><option>No Challenge</option></select><button disabled>Lock</button></div>)}</div>{customTeams ? <><h2>Drag Players Into Custom Teams</h2><div className="teams"><TeamGrid team="A" /><TeamGrid team="B" /></div></> : <h2>Teams will randomize when the game starts</h2>}<br /><button className="redMain" onClick={startGame} disabled={players.length < 2}>Start Game</button></>}
 
       {phase === "weekStart" && <><h2>Week {week}</h2><h3>{currentFormat === "team-vs-team" ? "Team vs Team" : "Team vs Self"}</h3><div className="teams"><TeamGrid team="A" /><TeamGrid team="B" /></div><br /><button onClick={beginChallenge}>Advance to Challenge</button></>}
       {phase === "challenge" && winningTeam && <><h2>Challenge Result</h2><h3>{teamNames[winningTeam]} wins safety!</h3><div className="teams"><TeamGrid team={winningTeam} /></div><br /><button onClick={setupWinnerVote}>Advance to Voting</button></>}
