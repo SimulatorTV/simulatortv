@@ -120,6 +120,15 @@ export default function SimulatorsPage() {
 />
 
 <SimulatorCard
+  title="Pyramid"
+  description="Move up, fall down, survive the bottom tiers, and avoid the free-for-all eliminations."
+  href="/simulators/pyramid"
+  buttonText="Open Pyramid"
+  buttonClass="bg-yellow-400 hover:bg-yellow-300 text-black"
+/>
+
+
+<SimulatorCard
   title="Grand Eliminator"
   description="Challenge winner sends 4 into elimination. One is eliminated, the other 3 go to the next round. Last person standing wins."
   href="/simulators/grand-eliminator"
