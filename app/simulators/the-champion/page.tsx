@@ -114,7 +114,16 @@ export default function TheChampionSimulator() {
   const champion = players.find((p) => p.id === championId);
   const challenger = players.find((p) => p.id === challengerId);
   const revealedVoteList = votes.filter((v) => revealedVoterIds.includes(v.voterId));
-  const voteCounter = useMemo(() => chosenFour.map((nom) => ({ ...nom, voteCount: revealedVoteList.filter((v) => v.voteId === nom.id).length })).filter((p) => p.voteCount > 0).sort((a, b) => b.voteCount - a.voteCount), [chosenFour, revealedVoteList]);
+  const voteCounter = useMemo(
+    () =>
+      chosenFour
+        .map((nom) => ({
+          ...nom,
+          voteCount: revealedVoteList.filter((v) => v.voteId === nom.id).length,
+        }))
+        .sort((a, b) => b.voteCount - a.voteCount),
+    [chosenFour, revealedVoteList]
+  );
 
   useEffect(() => { loadSavedCasts(); }, []);
 
@@ -242,7 +251,7 @@ const styles = {
   rankImage: { width: 60, height: 60, objectFit: "cover", borderRadius: 8 },
   nominationLayout: { display: "grid", gridTemplateColumns: "repeat(5, minmax(0, 1fr))", gap: 14, width: "100%", maxWidth: 1200, margin: "20px auto", alignItems: "stretch" },
   questionCard: { width: "100%", aspectRatio: "1 / 1", background: "white", color: "black", borderRadius: 10, border: "4px solid gold", fontSize: 64, fontWeight: "bold", cursor: "pointer" },
-  counterWrap: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: 12, maxWidth: 760, margin: "20px auto" },
+  counterWrap: { display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: 12, maxWidth: 760, margin: "20px auto" },
   counterCard: { color: "black", borderRadius: 10, padding: 8, fontWeight: "bold", border: "3px solid white" },
   noVotes: { gridColumn: "1 / -1", background: "#222", border: "2px dashed #555", color: "#ddd", borderRadius: 12, padding: 18, fontWeight: "bold" },
   counterImage: { width: "100%", aspectRatio: "1 / 1", objectFit: "cover", borderRadius: 8 },
