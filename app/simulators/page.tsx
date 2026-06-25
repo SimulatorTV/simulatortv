@@ -121,10 +121,18 @@ export default function SimulatorsPage() {
 
 <SimulatorCard
   title="Pyramid"
-  description="Move up, fall down, survive the bottom tiers, and avoid the free-for-all eliminations."
+  description="Climb to the top of the pyramid."
   href="/simulators/pyramid"
   buttonText="Open Pyramid"
   buttonClass="bg-yellow-400 hover:bg-yellow-300 text-black"
+/>
+
+<SimulatorCard
+  title="The Champion"
+  description="A throne-holding champion faces challengers selected through nominations, votes, and dice duels."
+  href="/simulators/the-champion"
+  buttonText="Open The Champion"
+  buttonClass="bg-blue-950 hover:bg-blue-900 text-white"
 />
 
 
