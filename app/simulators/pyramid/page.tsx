@@ -195,6 +195,7 @@ export default function PyramidSimulator() {
   const [elimPool, setElimPool] = useState([]);
   const [elimOrder, setElimOrder] = useState([]);
   const [safeRevealed, setSafeRevealed] = useState([]);
+  const [hiddenSafeIds, setHiddenSafeIds] = useState([]);
   const [loserIds, setLoserIds] = useState([]);
   const [champion, setChampion] = useState(null);
 
@@ -215,7 +216,7 @@ export default function PyramidSimulator() {
     }
     document.addEventListener("keydown", keyHandler);
     return () => document.removeEventListener("keydown", keyHandler);
-  }, [phase, players, plannedMove, pendingPlayers, elimPool, elimOrder, safeRevealed, loserIds]);
+  }, [phase, players, plannedMove, pendingPlayers, elimPool, elimOrder, safeRevealed, hiddenSafeIds, loserIds]);
 
   async function loadSavedCasts() {
     const { data: userData } = await supabase.auth.getUser();
@@ -315,6 +316,7 @@ export default function PyramidSimulator() {
     setElimPool([]);
     setElimOrder([]);
     setSafeRevealed([]);
+    setHiddenSafeIds([]);
     setLoserIds([]);
     setChampion(null);
   }
@@ -379,6 +381,7 @@ export default function PyramidSimulator() {
     setPendingPlayers(null);
     setLoserIds([]);
     setSafeRevealed([]);
+    setHiddenSafeIds([]);
     setElimOrder([]);
     setElimPool([]);
     setLastLog([`The Pyramid begins with ${selected.length} players.`, `Everyone starts on Tier ${caps.length - startTier}, with an empty ${selected.length}-slot tier below them.`]);
@@ -502,6 +505,7 @@ export default function PyramidSimulator() {
     setPhase("elimScreen");
     setElimOrder([...safe.map((player) => player.id), ...losers.map((player) => player.id)]);
     setSafeRevealed([]);
+    setHiddenSafeIds([]);
     setLoserIds(losers.map((player) => player.id));
     setLastLog([pool.length === 1 ? `${pool[0].name} is alone on the elimination floor.` : `${pool.map((player) => player.name).join(", ")} enter the free-for-all elimination.`]);
   }
@@ -522,6 +526,22 @@ export default function PyramidSimulator() {
     }
   }
 
+  function hideSafePlayers() {
+    if (phase !== "elimScreen") return;
+
+    const newlyHidden = safeRevealed.filter((id) => !hiddenSafeIds.includes(id));
+
+    setHiddenSafeIds((current) => [
+      ...new Set([...current, ...safeRevealed]),
+    ]);
+
+    setLastLog([
+      newlyHidden.length > 0
+        ? `${newlyHidden.length} safe player${newlyHidden.length === 1 ? "" : "s"} hidden from the elimination screen.`
+        : "No new safe players to hide yet.",
+    ]);
+  }
+
   function returnToPyramid() {
     const loserSet = new Set(loserIds);
     const newLiveCount = players.filter((player) => !player.eliminated).length - loserIds.length;
@@ -533,6 +553,7 @@ export default function PyramidSimulator() {
     setElimPool([]);
     setElimOrder([]);
     setSafeRevealed([]);
+    setHiddenSafeIds([]);
     setLoserIds([]);
     setLastMove({});
     setPlannedMove({});
@@ -628,11 +649,20 @@ export default function PyramidSimulator() {
   }
 
   function renderElimScreen() {
-    const pool = players.filter((player) => elimOrder.includes(player.id) && !player.eliminated);
+    const pool = players.filter((player) => elimOrder.includes(player.id) && !player.eliminated && !hiddenSafeIds.includes(player.id));
     return (
       <div className="elimScreen">
         <div className="elimTitle">FREE-FOR-ALL ELIMINATION</div>
         <div className="subtitle">Advance to reveal safe players. The last one not green goes red and black-and-white.</div>
+        <div className="elimButtons">
+          <button
+            className="btn secondary"
+            onClick={hideSafePlayers}
+            disabled={safeRevealed.filter((id) => !hiddenSafeIds.includes(id)).length === 0}
+          >
+            Hide Safe
+          </button>
+        </div>
         <div className="elimGrid">
           {pool.map((player) => {
             let cls = "";
@@ -700,7 +730,7 @@ export default function PyramidSimulator() {
         .card.champion{background:#ffd95a;border-color:#fff;box-shadow:0 0 28px rgba(255,217,90,.55)}
         .elimScreen{max-width:1250px;margin:0 auto;padding:16px;border:1px solid rgba(255,60,60,.55);border-radius:18px;background:rgba(70,0,0,.25)}
         .elimTitle{text-align:center;color:#ff7777;font-size:28px;font-weight:900;margin:4px 0 6px}
-        .elimGrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,140px));gap:12px;justify-content:center;margin-top:12px}
+        .elimButtons{display:flex;justify-content:center;gap:10px;flex-wrap:wrap;margin:10px 0 12px}.elimGrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,140px));gap:12px;justify-content:center;margin-top:12px}
         .pic{width:100%;aspect-ratio:1/1;object-fit:cover;display:block;background:#ddd}
         .name{font-size:11px;font-weight:900;text-align:center;padding:4px 2px 5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
         .badge{position:absolute;top:3px;right:3px;background:rgba(0,0,0,.74);color:white;border-radius:999px;font-size:10px;padding:2px 5px;font-weight:900}
