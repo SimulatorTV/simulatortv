@@ -1627,6 +1627,61 @@ function votingHistoryCellClass(type) {
   return map[type] || map.blank;
 }
 
+function chartNames(players = []) {
+  return (players || []).filter(Boolean).map((player) => player.name).join("\n") || "(None)";
+}
+
+function chartText(value) {
+  if (Array.isArray(value)) return chartNames(value);
+  return String(value || "")
+    .replace(/ \/ /g, "\n")
+    .replace(/, /g, "\n")
+    .replace(/: /g, ":\n");
+}
+
+function getVotingTargetForPlayer(round, player) {
+  if (!round || !player) return null;
+
+  if (round.type === "final3") {
+    const juryVote = (round.juryVotes || []).find((vote) => samePlayer(vote.juror, player));
+    return juryVote?.targetName ? { label: "Vote", target: juryVote.targetName } : null;
+  }
+
+  if (round.type === "split_house") {
+    const side = hasPlayer(round.sideA?.castGrid, player) || hasPlayer(round.groupA, player) ? round.sideA : round.sideB;
+    return getVotingTargetForPlayer(side, player);
+  }
+
+  if (round.type === "majority_rules") {
+    const loop = (round.loops || []).find((item) => hasPlayer(item.votingPlayers, player));
+    if (!loop) return null;
+    const voteIndex = (loop.votingPlayers || []).findIndex((voter) => samePlayer(voter, player));
+    const vote = loop.votingTargets?.[voteIndex];
+    if (!vote) return null;
+    return { label: "Vote", target: vote === "evict" ? `Evict ${loop.nominee?.name || "Nominee"}` : `Save ${loop.nominee?.name || "Nominee"}` };
+  }
+
+  const voteIndex = (round.votingPlayers || []).findIndex((voter) => samePlayer(voter, player));
+  const target = voteIndex >= 0 ? round.votingTargets?.[voteIndex] : null;
+  if (!target) return null;
+
+  return {
+    label: round.type === "vote_to_save" ? "Save" : "Vote",
+    target,
+  };
+}
+
+function getPlacementValue(player, winner, runnerUp, finalEvicted, evictedByWeek) {
+  if (samePlayer(player, winner)) return 100000;
+  if (samePlayer(player, runnerUp)) return 99999;
+  if (samePlayer(player, finalEvicted)) return 99998;
+
+  const eviction = evictedByWeek.get(player.name);
+  if (typeof eviction === "number") return eviction;
+  if (eviction === "Final 3") return 99998;
+  return 0;
+}
+
 function VotingHistoryScreen({ seasonFlow }) {
   const rounds = seasonFlow?.rounds || [];
   const regularRounds = rounds.filter((round) => round.type !== "final3");
@@ -1655,15 +1710,8 @@ function VotingHistoryScreen({ seasonFlow }) {
   if (finalEvicted?.name) evictedByWeek.set(finalEvicted.name, "Final 3");
 
   const orderedPlayers = [...allPlayers].sort((a, b) => {
-    if (a.name === winner?.name) return -1;
-    if (b.name === winner?.name) return 1;
-    if (a.name === runnerUp?.name) return -1;
-    if (b.name === runnerUp?.name) return 1;
-
-    const aEvicted = evictedByWeek.has(a.name);
-    const bEvicted = evictedByWeek.has(b.name);
-    if (aEvicted && !bEvicted) return 1;
-    if (!aEvicted && bEvicted) return -1;
+    const placementDiff = getPlacementValue(b, winner, runnerUp, finalEvicted, evictedByWeek) - getPlacementValue(a, winner, runnerUp, finalEvicted, evictedByWeek);
+    if (placementDiff !== 0) return placementDiff;
     return a.name.localeCompare(b.name);
   });
 
@@ -1673,11 +1721,12 @@ function VotingHistoryScreen({ seasonFlow }) {
     if (!round) return { text: "", type: "blank" };
 
     if (round.type === "final3") {
+      const vote = getVotingTargetForPlayer(round, player);
       if (samePlayer(winner, player)) return { text: "Winner", type: "winner" };
       if (samePlayer(runnerUp, player)) return { text: "Runner-up", type: "runnerUp" };
       if (samePlayer(finalHoh, player)) return { text: "Final HOH", type: "finalHoh" };
       if (samePlayer(finalEvicted, player)) return { text: "Evicted", type: "evicted" };
-      return { text: "Jury", type: "out" };
+      return { text: vote ? `${vote.label}: ${vote.target}` : "Jury", type: "out" };
     }
 
     const evictionWeek = evictedByWeek.get(player.name);
@@ -1685,7 +1734,27 @@ function VotingHistoryScreen({ seasonFlow }) {
       return { text: "", type: "out" };
     }
 
-    return statusForStandardRound(round, player);
+    const status = statusForStandardRound(round, player);
+    const vote = getVotingTargetForPlayer(round, player);
+
+    if (vote && status.text && status.type !== "evicted") {
+      return { ...status, text: `${status.text}\n${vote.label}: ${vote.target}` };
+    }
+
+    if (vote && (!status.text || status.type === "blank")) {
+      return { text: `${vote.label}: ${vote.target}`, type: "blank" };
+    }
+
+    return status;
+  }
+
+  function renderCellText(text) {
+    return String(text || "")
+      .split("\n")
+      .filter((line) => line !== "")
+      .map((line, index) => (
+        <div key={`${line}-${index}`} className={index > 0 ? "mt-0.5" : ""}>{line}</div>
+      ));
   }
 
   return (
@@ -1699,7 +1768,7 @@ function VotingHistoryScreen({ seasonFlow }) {
         </CardHeader>
 
         <CardContent>
-          <div className="flex flex-wrap gap-3 mb-4 text-xs font-bold text-black">
+          <div className="flex flex-wrap gap-2 mb-4 text-[10px] font-bold text-black">
             <span className="px-2 py-1 rounded bg-green-400">Winner</span>
             <span className="px-2 py-1 rounded bg-slate-200">Runner-up</span>
             <span className="px-2 py-1 rounded bg-lime-200">Head of Household / Power</span>
@@ -1709,84 +1778,84 @@ function VotingHistoryScreen({ seasonFlow }) {
           </div>
 
           <div className="overflow-auto border border-slate-400 rounded-xl bg-white">
-            <table className="min-w-[1200px] w-full border-collapse text-[11px] text-black">
+            <table className="min-w-[980px] w-full border-collapse text-[8.5px] leading-[1.05] text-black">
               <thead>
                 <tr>
-                  <th className="sticky left-0 z-20 bg-slate-200 border border-slate-400 p-2 min-w-[130px]">Houseguest</th>
+                  <th className="sticky left-0 z-20 bg-slate-200 border border-slate-400 p-1 min-w-[92px] w-[92px]">Houseguest</th>
                   {regularRounds.map((round) => (
-                    <th key={`week-${round.weekNumber}`} className="border border-slate-400 bg-slate-200 p-2 min-w-[130px]">
+                    <th key={`week-${round.weekNumber}`} className="border border-slate-400 bg-slate-200 p-1 min-w-[72px] w-[72px]">
                       Week {round.weekNumber}
                     </th>
                   ))}
-                  {finalRound && <th className="border border-slate-400 bg-slate-200 p-2 min-w-[130px]">Finale</th>}
+                  {finalRound && <th className="border border-slate-400 bg-slate-200 p-1 min-w-[72px] w-[72px]">Finale</th>}
                 </tr>
 
                 <tr>
-                  <th className="sticky left-0 z-20 bg-slate-100 border border-slate-400 p-2 text-left">Twist</th>
+                  <th className="sticky left-0 z-20 bg-slate-100 border border-slate-400 p-1 text-left">Twist</th>
                   {regularRounds.map((round) => (
-                    <td key={`twist-${round.weekNumber}`} className="border border-slate-400 bg-slate-100 p-2 text-center font-semibold">
-                      {getTwistLabel(round.twistId)}
+                    <td key={`twist-${round.weekNumber}`} className="border border-slate-400 bg-slate-100 p-1 text-center font-semibold align-middle">
+                      {renderCellText(chartText(getTwistLabel(round.twistId)))}
                     </td>
                   ))}
-                  {finalRound && <td className="border border-slate-400 bg-slate-100 p-2 text-center font-semibold">Final 3</td>}
+                  {finalRound && <td className="border border-slate-400 bg-slate-100 p-1 text-center font-semibold align-middle">Final 3</td>}
                 </tr>
 
                 <tr>
-                  <th className="sticky left-0 z-20 bg-slate-100 border border-slate-400 p-2 text-left">Power</th>
+                  <th className="sticky left-0 z-20 bg-slate-100 border border-slate-400 p-1 text-left">Power</th>
                   {regularRounds.map((round) => (
-                    <td key={`power-${round.weekNumber}`} className="border border-slate-400 bg-lime-100 p-2 text-center">
-                      {describeRoundPower(round)}
+                    <td key={`power-${round.weekNumber}`} className="border border-slate-400 bg-lime-100 p-1 text-center align-middle">
+                      {renderCellText(chartText(describeRoundPower(round)))}
                     </td>
                   ))}
-                  {finalRound && <td className="border border-slate-400 bg-lime-100 p-2 text-center">Final HOH: {finalRound.finalHoh?.name || "(None)"}</td>}
+                  {finalRound && <td className="border border-slate-400 bg-lime-100 p-1 text-center align-middle">{renderCellText(`Final HOH:\n${finalRound.finalHoh?.name || "(None)"}`)}</td>}
                 </tr>
 
                 <tr>
-                  <th className="sticky left-0 z-20 bg-slate-100 border border-slate-400 p-2 text-left">Nominations</th>
+                  <th className="sticky left-0 z-20 bg-slate-100 border border-slate-400 p-1 text-left">Nominations</th>
                   {regularRounds.map((round) => (
-                    <td key={`noms-${round.weekNumber}`} className="border border-slate-400 bg-blue-50 p-2 text-center">
-                      {describeRoundNominees(round)}
+                    <td key={`noms-${round.weekNumber}`} className="border border-slate-400 bg-blue-50 p-1 text-center align-middle">
+                      {renderCellText(chartText(describeRoundNominees(round)))}
                     </td>
                   ))}
-                  {finalRound && <td className="border border-slate-400 bg-blue-50 p-2 text-center">Finalists: {compactNames(finalRound.finalists)}</td>}
+                  {finalRound && <td className="border border-slate-400 bg-blue-50 p-1 text-center align-middle">{renderCellText(`Finalists:\n${chartNames(finalRound.finalists)}`)}</td>}
                 </tr>
 
                 <tr>
-                  <th className="sticky left-0 z-20 bg-slate-100 border border-slate-400 p-2 text-left">Veto / Safety</th>
+                  <th className="sticky left-0 z-20 bg-slate-100 border border-slate-400 p-1 text-left">Veto / Safety</th>
                   {regularRounds.map((round) => (
-                    <td key={`veto-${round.weekNumber}`} className="border border-slate-400 bg-yellow-50 p-2 text-center">
-                      {describeRoundVeto(round)}
+                    <td key={`veto-${round.weekNumber}`} className="border border-slate-400 bg-yellow-50 p-1 text-center align-middle">
+                      {renderCellText(chartText(describeRoundVeto(round)))}
                     </td>
                   ))}
-                  {finalRound && <td className="border border-slate-400 bg-yellow-50 p-2 text-center">Jury vote</td>}
+                  {finalRound && <td className="border border-slate-400 bg-yellow-50 p-1 text-center align-middle">Jury vote</td>}
                 </tr>
 
                 <tr>
-                  <th className="sticky left-0 z-20 bg-slate-100 border border-slate-400 p-2 text-left">Final nominees</th>
+                  <th className="sticky left-0 z-20 bg-slate-100 border border-slate-400 p-1 text-left">Final nominees</th>
                   {regularRounds.map((round) => (
-                    <td key={`final-noms-${round.weekNumber}`} className="border border-slate-400 bg-indigo-50 p-2 text-center">
-                      {describeRoundFinalNominees(round)}
+                    <td key={`final-noms-${round.weekNumber}`} className="border border-slate-400 bg-indigo-50 p-1 text-center align-middle">
+                      {renderCellText(chartText(describeRoundFinalNominees(round)))}
                     </td>
                   ))}
-                  {finalRound && <td className="border border-slate-400 bg-indigo-50 p-2 text-center">Runner-up: {runnerUp?.name || "(None)"}</td>}
+                  {finalRound && <td className="border border-slate-400 bg-indigo-50 p-1 text-center align-middle">{renderCellText(`Runner-up:\n${runnerUp?.name || "(None)"}`)}</td>}
                 </tr>
               </thead>
 
               <tbody>
                 {orderedPlayers.map((player) => (
                   <tr key={`row-${player.name}`}>
-                    <th className="sticky left-0 z-10 bg-slate-200 border border-slate-400 p-2 text-left font-black">
-                      <div className="flex items-center gap-2">
-                        <img src={player.image} alt={player.name} className="h-9 w-9 rounded object-cover bg-white" />
-                        <span>{player.name}</span>
+                    <th className="sticky left-0 z-10 bg-slate-200 border border-slate-400 p-1 text-left font-black align-middle">
+                      <div className="flex items-center gap-1">
+                        <img src={player.image} alt={player.name} className="h-6 w-6 rounded object-cover bg-white shrink-0" />
+                        <span className="leading-[1.05]">{player.name}</span>
                       </div>
                     </th>
 
                     {headerRounds.map((round, index) => {
                       const cell = getCell(round, player);
                       return (
-                        <td key={`${player.name}-${round.type}-${round.weekNumber || "final"}-${index}`} className={`border border-slate-400 p-2 text-center font-semibold ${votingHistoryCellClass(cell.type)}`}>
-                          {cell.text}
+                        <td key={`${player.name}-${round.type}-${round.weekNumber || "final"}-${index}`} className={`border border-slate-400 p-1 text-center font-semibold align-middle ${votingHistoryCellClass(cell.type)}`}>
+                          {renderCellText(cell.text)}
                         </td>
                       );
                     })}
@@ -1794,15 +1863,15 @@ function VotingHistoryScreen({ seasonFlow }) {
                 ))}
 
                 <tr>
-                  <th className="sticky left-0 z-10 bg-slate-200 border border-slate-400 p-2 text-left font-black">Evicted</th>
+                  <th className="sticky left-0 z-10 bg-slate-200 border border-slate-400 p-1 text-left font-black">Evicted</th>
                   {regularRounds.map((round) => (
-                    <td key={`evicted-row-${round.weekNumber}`} className="border border-slate-400 bg-red-400 p-2 text-center font-bold text-black">
-                      {describeRoundEviction(round)}
+                    <td key={`evicted-row-${round.weekNumber}`} className="border border-slate-400 bg-red-400 p-1 text-center font-bold text-black align-middle">
+                      {renderCellText(chartText(describeRoundEviction(round)))}
                     </td>
                   ))}
                   {finalRound && (
-                    <td className="border border-slate-400 bg-green-400 p-2 text-center font-bold text-black">
-                      {winner?.name || "(None)"} wins
+                    <td className="border border-slate-400 bg-green-400 p-1 text-center font-bold text-black align-middle">
+                      {renderCellText(`${winner?.name || "(None)"}\nwins`)}
                     </td>
                   )}
                 </tr>
