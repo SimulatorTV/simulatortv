@@ -165,7 +165,7 @@ const SPLIT_HOUSE_DUEL_PHASES = [
   "voteReveal",
   "evicted",
 ];
-const FINAL3_PHASES = ["final3Competitions", "finalHohVote", "juryVoteReveal", "winner"];
+const FINAL3_PHASES = ["final3Competitions", "finalHohVote", "juryVoteReveal", "winner", "votingHistory"];
 
 function shuffle(arr) {
   const copy = [...arr];
@@ -1443,7 +1443,379 @@ function SetupScreen({
   );
 }
 
-function WinnerScreen({ winner }) {
+
+function compactNames(players = []) {
+  return (players || []).filter(Boolean).map((player) => player.name).join(", ") || "(None)";
+}
+
+function getTwistLabel(twistId) {
+  return TWIST_OPTIONS.find((twist) => twist.id === twistId)?.label || "Normal";
+}
+
+function samePlayer(a, b) {
+  return Boolean(a?.name && b?.name && a.name === b.name);
+}
+
+function hasPlayer(list = [], player) {
+  return (list || []).some((item) => samePlayer(item, player));
+}
+
+function getRoundEvictedPlayers(round) {
+  if (!round || round.type === "final3") return [];
+  if (round.type === "split_house") {
+    return [round.sideA?.evictedPlayer, round.sideB?.evictedPlayer].filter(Boolean);
+  }
+  if (round.type === "vote_to_save") {
+    return round.evictedPlayers || [];
+  }
+  if (round.type === "battle_back") {
+    return round.permanentlyEliminated || [];
+  }
+  return round.evictedPlayer ? [round.evictedPlayer] : [];
+}
+
+function describeRoundPower(round) {
+  if (!round || round.type === "final3") return "";
+  if (round.type === "battle_of_the_block") return `HOHs: ${compactNames(round.hohPlayers)} / Active HOH: ${round.survivingHoh?.name || "None"}`;
+  if (round.type === "chain_of_safety") return `Chain starter: ${round.safeOrder?.[0]?.name || "None"}`;
+  if (round.type === "survivor") return `Immune: ${round.immunityWinner?.name || "None"}`;
+  if (round.type === "executioner") return `Executioner: ${round.executionerWinner?.name || "None"}`;
+  if (round.type === "random_elimination") return "Random elimination";
+  if (round.type === "battle_back") return `Returned: ${round.returnWinner?.name || "None"}`;
+  if (round.type === "majority_rules") return `Comp winner: ${round.loops?.[0]?.compWinner?.name || "None"}`;
+  if (round.type === "split_house") {
+    return `Side A HOH: ${round.sideA?.hohPlayer?.name || "None"} / Side B HOH: ${round.sideB?.hohPlayer?.name || "None"}`;
+  }
+  if (round.type === "split_house_duel") return `Safe side: ${compactNames(round.safeSide)}`;
+  return round.hohPlayer ? `HOH: ${round.hohPlayer.name}` : "";
+}
+
+function describeRoundNominees(round) {
+  if (!round || round.type === "final3") return "";
+  if (round.type === "battle_of_the_block") return `Initial: ${compactNames([...(round.pairA || []), ...(round.pairB || [])])}`;
+  if (round.type === "chain_of_safety") return compactNames(round.nomineePlayers);
+  if (round.type === "survivor") return "Everyone except immune";
+  if (round.type === "executioner") return "Everyone except Executioner";
+  if (round.type === "bbuk") return compactNames(round.nomineePlayers);
+  if (round.type === "split_house") return `A: ${compactNames(round.sideA?.nomineePlayers)} / B: ${compactNames(round.sideB?.nomineePlayers)}`;
+  if (round.type === "split_house_duel") return compactNames(round.nomineePlayers);
+  if (round.type === "majority_rules") return compactNames(round.nomineePlayers);
+  if (round.type === "random_elimination" || round.type === "battle_back") return "(None)";
+  return compactNames(round.nomineePlayers);
+}
+
+function describeRoundFinalNominees(round) {
+  if (!round || round.type === "final3") return "";
+  if (round.type === "split_house") return `A: ${compactNames(round.sideA?.finalNomineePlayers)} / B: ${compactNames(round.sideB?.finalNomineePlayers)}`;
+  if (round.type === "random_elimination" || round.type === "battle_back") return "(None)";
+  return compactNames(round.finalNomineePlayers);
+}
+
+function describeRoundVeto(round) {
+  if (!round || round.type === "final3") return "";
+  if (round.type === "split_house") return `A: ${round.sideA?.vetoWinner?.name || "None"} / B: ${round.sideB?.vetoWinner?.name || "None"}`;
+  if (round.type === "battle_back" || round.type === "random_elimination" || round.type === "chain_of_safety" || round.type === "survivor" || round.type === "executioner" || round.type === "bbuk" || round.type === "bbau" || round.type === "majority_rules") return "(None)";
+  return round.vetoWinner?.name || "(None)";
+}
+
+function describeRoundEviction(round) {
+  if (!round || round.type === "final3") return "";
+  if (round.type === "vote_to_save") {
+    return compactNames(round.evictedPlayers);
+  }
+  if (round.type === "split_house") {
+    return compactNames([round.sideA?.evictedPlayer, round.sideB?.evictedPlayer].filter(Boolean));
+  }
+  if (round.type === "battle_back") {
+    return `${round.returnWinner?.name || "No one"} returned`;
+  }
+  const evicted = round.evictedPlayer?.name || "(None)";
+  const counts = round.voteCounts && round.evictedPlayer ? round.voteCounts[round.evictedPlayer.name] : null;
+  const totalVotes = round.votingTargets?.filter(Boolean)?.length;
+  return counts != null && totalVotes != null ? `${evicted} (${counts}-${Math.max(0, totalVotes - counts)})` : evicted;
+}
+
+function statusForStandardRound(round, player) {
+  if (!round || !player) return { text: "", type: "blank" };
+
+  if (hasPlayer(getRoundEvictedPlayers(round), player)) return { text: "Evicted", type: "evicted" };
+  if (!hasPlayer(round.castGrid || [], player) && !hasPlayer(round.competitors || [], player)) return { text: "—", type: "out" };
+
+  if (round.type === "battle_back") {
+    if (samePlayer(round.returnWinner, player)) return { text: "Returned", type: "returned" };
+    if (hasPlayer(round.competitors, player)) return { text: "Out", type: "evicted" };
+    return { text: "", type: "blank" };
+  }
+
+  if (round.type === "random_elimination") return { text: "Safe", type: "safe" };
+
+  if (round.type === "chain_of_safety") {
+    if (hasPlayer(round.finalNomineePlayers, player)) return { text: "Nominated", type: "nominated" };
+    if (hasPlayer(round.safeOrder, player)) return { text: "Safe", type: "safe" };
+    return { text: "", type: "blank" };
+  }
+
+  if (round.type === "survivor") {
+    if (samePlayer(round.immunityWinner, player)) return { text: "Immune", type: "immune" };
+    if (hasPlayer(round.finalNomineePlayers, player)) return { text: "Vulnerable", type: "nominated" };
+    return { text: "", type: "blank" };
+  }
+
+  if (round.type === "executioner") {
+    if (samePlayer(round.executionerWinner, player)) return { text: "Executioner", type: "hoh" };
+    if (hasPlayer(round.finalNomineePlayers, player)) return { text: "Vulnerable", type: "nominated" };
+    return { text: "", type: "blank" };
+  }
+
+  if (round.type === "bbuk") {
+    if (hasPlayer(round.finalNomineePlayers, player)) return { text: "Nominated", type: "nominated" };
+    return { text: "", type: "blank" };
+  }
+
+  if (round.type === "bbau") {
+    if (samePlayer(round.hohPlayer, player)) return { text: "Nominated", type: "nominated" };
+    if (hasPlayer(round.finalNomineePlayers, player)) return { text: "Nominated", type: "nominated" };
+    return { text: "", type: "blank" };
+  }
+
+  if (round.type === "majority_rules") {
+    const loop = round.loops?.find((item) => samePlayer(item.compWinner, player) || samePlayer(item.nominee, player));
+    if (loop?.compWinner && samePlayer(loop.compWinner, player)) return { text: "Won Comp", type: "hoh" };
+    if (loop?.nominee && samePlayer(loop.nominee, player)) return { text: loop.outcome === "saved" ? "Saved" : "Nominated", type: loop.outcome === "saved" ? "safe" : "nominated" };
+    return { text: "", type: "blank" };
+  }
+
+  if (round.type === "split_house") {
+    const side = hasPlayer(round.sideA?.castGrid, player) || hasPlayer(round.groupA, player) ? round.sideA : round.sideB;
+    return statusForStandardRound(side, player);
+  }
+
+  if (round.type === "split_house_duel") {
+    if (hasPlayer(round.safeSide, player)) return { text: "Immune", type: "immune" };
+  }
+
+  if (round.type === "battle_of_the_block") {
+    if (samePlayer(round.survivingHoh, player)) return { text: "Head of Household", type: "hoh" };
+    if (samePlayer(round.dethronedHoh, player)) return { text: "Dethroned HOH", type: "safe" };
+    if (hasPlayer(round.winningPair, player)) return { text: "Safe", type: "safe" };
+  }
+
+  if (samePlayer(round.hohPlayer, player)) return { text: "Head of Household", type: "hoh" };
+  if (hasPlayer(round.finalNomineePlayers, player)) return { text: "Nominated", type: "nominated" };
+  if (samePlayer(round.vetoWinner, player)) return { text: "Veto Winner", type: "veto" };
+  if (hasPlayer(round.nomineePlayers, player)) return { text: "Nominated", type: "nominated" };
+
+  return { text: "", type: "blank" };
+}
+
+function votingHistoryCellClass(type) {
+  const map = {
+    winner: "bg-green-400 text-black",
+    runnerUp: "bg-slate-200 text-black",
+    finalHoh: "bg-lime-200 text-black italic",
+    hoh: "bg-lime-200 text-black italic",
+    nominated: "bg-indigo-300 text-black italic",
+    veto: "bg-yellow-200 text-black",
+    immune: "bg-yellow-100 text-black",
+    safe: "bg-emerald-100 text-black",
+    returned: "bg-purple-200 text-black",
+    evicted: "bg-red-400 text-black",
+    out: "bg-red-300 text-black",
+    blank: "bg-white text-black",
+  };
+
+  return map[type] || map.blank;
+}
+
+function VotingHistoryScreen({ seasonFlow }) {
+  const rounds = seasonFlow?.rounds || [];
+  const regularRounds = rounds.filter((round) => round.type !== "final3");
+  const finalRound = rounds.find((round) => round.type === "final3");
+  const firstCast = regularRounds[0]?.castGrid || finalRound?.castGrid || [];
+  const allPlayersByName = new Map();
+
+  [...firstCast, ...regularRounds.flatMap((round) => round.castGrid || []), ...(finalRound?.castGrid || []), ...(finalRound?.juryPlayers || []), ...(finalRound?.finalists || [])]
+    .filter(Boolean)
+    .forEach((player) => {
+      if (!allPlayersByName.has(player.name)) allPlayersByName.set(player.name, player);
+    });
+
+  const allPlayers = Array.from(allPlayersByName.values());
+  const winner = finalRound?.winner || seasonFlow?.winner || null;
+  const runnerUp = finalRound?.finalists?.find((player) => player.name !== winner?.name) || null;
+  const finalHoh = finalRound?.finalHoh || null;
+  const finalEvicted = finalRound?.finalEvictedPlayer || null;
+
+  const evictedByWeek = new Map();
+  regularRounds.forEach((round) => {
+    getRoundEvictedPlayers(round).forEach((player) => {
+      if (player?.name && !evictedByWeek.has(player.name)) evictedByWeek.set(player.name, round.weekNumber);
+    });
+  });
+  if (finalEvicted?.name) evictedByWeek.set(finalEvicted.name, "Final 3");
+
+  const orderedPlayers = [...allPlayers].sort((a, b) => {
+    if (a.name === winner?.name) return -1;
+    if (b.name === winner?.name) return 1;
+    if (a.name === runnerUp?.name) return -1;
+    if (b.name === runnerUp?.name) return 1;
+
+    const aEvicted = evictedByWeek.has(a.name);
+    const bEvicted = evictedByWeek.has(b.name);
+    if (aEvicted && !bEvicted) return 1;
+    if (!aEvicted && bEvicted) return -1;
+    return a.name.localeCompare(b.name);
+  });
+
+  const headerRounds = [...regularRounds, finalRound].filter(Boolean);
+
+  function getCell(round, player) {
+    if (!round) return { text: "", type: "blank" };
+
+    if (round.type === "final3") {
+      if (samePlayer(winner, player)) return { text: "Winner", type: "winner" };
+      if (samePlayer(runnerUp, player)) return { text: "Runner-up", type: "runnerUp" };
+      if (samePlayer(finalHoh, player)) return { text: "Final HOH", type: "finalHoh" };
+      if (samePlayer(finalEvicted, player)) return { text: "Evicted", type: "evicted" };
+      return { text: "Jury", type: "out" };
+    }
+
+    const evictionWeek = evictedByWeek.get(player.name);
+    if (evictionWeek && typeof evictionWeek === "number" && evictionWeek < round.weekNumber) {
+      return { text: "", type: "out" };
+    }
+
+    return statusForStandardRound(round, player);
+  }
+
+  return (
+    <div className="space-y-6">
+      <Card className="bg-white/80 border border-black/20 rounded-3xl shadow-2xl overflow-hidden">
+        <CardHeader>
+          <CardTitle className="text-stone-900 text-3xl">Voting History</CardTitle>
+          <div className="text-stone-700 text-sm mt-2">
+            Wikipedia-style season chart. This is only a summary screen and does not change gameplay.
+          </div>
+        </CardHeader>
+
+        <CardContent>
+          <div className="flex flex-wrap gap-3 mb-4 text-xs font-bold text-black">
+            <span className="px-2 py-1 rounded bg-green-400">Winner</span>
+            <span className="px-2 py-1 rounded bg-slate-200">Runner-up</span>
+            <span className="px-2 py-1 rounded bg-lime-200">Head of Household / Power</span>
+            <span className="px-2 py-1 rounded bg-indigo-300">Nominated</span>
+            <span className="px-2 py-1 rounded bg-yellow-200">Veto / Immune</span>
+            <span className="px-2 py-1 rounded bg-red-400">Evicted</span>
+          </div>
+
+          <div className="overflow-auto border border-slate-400 rounded-xl bg-white">
+            <table className="min-w-[1200px] w-full border-collapse text-[11px] text-black">
+              <thead>
+                <tr>
+                  <th className="sticky left-0 z-20 bg-slate-200 border border-slate-400 p-2 min-w-[130px]">Houseguest</th>
+                  {regularRounds.map((round) => (
+                    <th key={`week-${round.weekNumber}`} className="border border-slate-400 bg-slate-200 p-2 min-w-[130px]">
+                      Week {round.weekNumber}
+                    </th>
+                  ))}
+                  {finalRound && <th className="border border-slate-400 bg-slate-200 p-2 min-w-[130px]">Finale</th>}
+                </tr>
+
+                <tr>
+                  <th className="sticky left-0 z-20 bg-slate-100 border border-slate-400 p-2 text-left">Twist</th>
+                  {regularRounds.map((round) => (
+                    <td key={`twist-${round.weekNumber}`} className="border border-slate-400 bg-slate-100 p-2 text-center font-semibold">
+                      {getTwistLabel(round.twistId)}
+                    </td>
+                  ))}
+                  {finalRound && <td className="border border-slate-400 bg-slate-100 p-2 text-center font-semibold">Final 3</td>}
+                </tr>
+
+                <tr>
+                  <th className="sticky left-0 z-20 bg-slate-100 border border-slate-400 p-2 text-left">Power</th>
+                  {regularRounds.map((round) => (
+                    <td key={`power-${round.weekNumber}`} className="border border-slate-400 bg-lime-100 p-2 text-center">
+                      {describeRoundPower(round)}
+                    </td>
+                  ))}
+                  {finalRound && <td className="border border-slate-400 bg-lime-100 p-2 text-center">Final HOH: {finalRound.finalHoh?.name || "(None)"}</td>}
+                </tr>
+
+                <tr>
+                  <th className="sticky left-0 z-20 bg-slate-100 border border-slate-400 p-2 text-left">Nominations</th>
+                  {regularRounds.map((round) => (
+                    <td key={`noms-${round.weekNumber}`} className="border border-slate-400 bg-blue-50 p-2 text-center">
+                      {describeRoundNominees(round)}
+                    </td>
+                  ))}
+                  {finalRound && <td className="border border-slate-400 bg-blue-50 p-2 text-center">Finalists: {compactNames(finalRound.finalists)}</td>}
+                </tr>
+
+                <tr>
+                  <th className="sticky left-0 z-20 bg-slate-100 border border-slate-400 p-2 text-left">Veto / Safety</th>
+                  {regularRounds.map((round) => (
+                    <td key={`veto-${round.weekNumber}`} className="border border-slate-400 bg-yellow-50 p-2 text-center">
+                      {describeRoundVeto(round)}
+                    </td>
+                  ))}
+                  {finalRound && <td className="border border-slate-400 bg-yellow-50 p-2 text-center">Jury vote</td>}
+                </tr>
+
+                <tr>
+                  <th className="sticky left-0 z-20 bg-slate-100 border border-slate-400 p-2 text-left">Final nominees</th>
+                  {regularRounds.map((round) => (
+                    <td key={`final-noms-${round.weekNumber}`} className="border border-slate-400 bg-indigo-50 p-2 text-center">
+                      {describeRoundFinalNominees(round)}
+                    </td>
+                  ))}
+                  {finalRound && <td className="border border-slate-400 bg-indigo-50 p-2 text-center">Runner-up: {runnerUp?.name || "(None)"}</td>}
+                </tr>
+              </thead>
+
+              <tbody>
+                {orderedPlayers.map((player) => (
+                  <tr key={`row-${player.name}`}>
+                    <th className="sticky left-0 z-10 bg-slate-200 border border-slate-400 p-2 text-left font-black">
+                      <div className="flex items-center gap-2">
+                        <img src={player.image} alt={player.name} className="h-9 w-9 rounded object-cover bg-white" />
+                        <span>{player.name}</span>
+                      </div>
+                    </th>
+
+                    {headerRounds.map((round, index) => {
+                      const cell = getCell(round, player);
+                      return (
+                        <td key={`${player.name}-${round.type}-${round.weekNumber || "final"}-${index}`} className={`border border-slate-400 p-2 text-center font-semibold ${votingHistoryCellClass(cell.type)}`}>
+                          {cell.text}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))}
+
+                <tr>
+                  <th className="sticky left-0 z-10 bg-slate-200 border border-slate-400 p-2 text-left font-black">Evicted</th>
+                  {regularRounds.map((round) => (
+                    <td key={`evicted-row-${round.weekNumber}`} className="border border-slate-400 bg-red-400 p-2 text-center font-bold text-black">
+                      {describeRoundEviction(round)}
+                    </td>
+                  ))}
+                  {finalRound && (
+                    <td className="border border-slate-400 bg-green-400 p-2 text-center font-bold text-black">
+                      {winner?.name || "(None)"} wins
+                    </td>
+                  )}
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function WinnerScreen({ winner, onAdvance }) {
   return (
     <div className="space-y-6">
       <Card className="bg-white/25 border-white/20 rounded-3xl shadow-2xl backdrop-blur-sm text-center">
@@ -1451,6 +1823,7 @@ function WinnerScreen({ winner }) {
         <CardContent className="flex flex-col items-center gap-4">
           {winner ? <StartCastTile player={winner} bgClassName="bg-emerald-200" /> : null}
           <div className="text-stone-900 text-xl font-semibold">{winner?.name} wins the season!</div>
+          <Button onClick={onAdvance} className="rounded-xl mt-2">Advance to Voting History</Button>
         </CardContent>
       </Card>
     </div>
@@ -1546,7 +1919,11 @@ function StartingCastScreen({
   const voteRevealColumns = round.type === "final3" ? 2 : Math.max(2, Math.min(4, round.finalNomineePlayers?.length || 2));
 
   if (actualPhase === "winner") {
-    return <WinnerScreen winner={round.winner} />;
+    return <WinnerScreen winner={round.winner} onAdvance={onAdvance} />;
+  }
+
+  if (actualPhase === "votingHistory") {
+    return <VotingHistoryScreen seasonFlow={seasonFlow} />;
   }
 
   if (phase === "final3Competitions") {
@@ -3141,7 +3518,7 @@ export default function BigBrotherSimulator() {
   const currentRound = seasonFlow?.rounds?.[roundIndex] || null;
   const isWinnerScreen = Boolean(
     currentRound?.type === "final3" &&
-    (FINAL3_PHASES[phaseIndex] || "") === "winner" &&
+    ["winner", "votingHistory"].includes(FINAL3_PHASES[phaseIndex] || "") &&
     seasonFlow?.winner
   );
 
