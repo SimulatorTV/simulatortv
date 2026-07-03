@@ -1400,9 +1400,9 @@ export default function BattleFighters() {
 
               {eliminatedOrder.length > 0 && (
                 <div className="eliminatedShelf">
-                  {eliminatedOrder
-                    .map((id) => players.find((p) => p.id === id))
-                    .filter(Boolean)
+                  {players
+                    .filter((p) => !p.alive && p.placement)
+                    .sort((a, b) => b.placement - a.placement)
                     .map((p) => (
                       <PlayerCard key={p.id} player={p} competedRound={false} />
                     ))}
