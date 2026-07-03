@@ -161,7 +161,7 @@ function AddCastMembersModal({
       >
         <div>{cast.name}</div>
         <div className="text-xs font-bold opacity-70">
-          {cast.show_name || (cast.is_official ? "Official Cast" : "Custom Cast")}
+          {cast.show_name || (cast.is_full_cast ? "Full Custom Cast" : cast.is_official ? "Official Cast" : "Custom Cast")}
         </div>
       </button>
     );
@@ -341,6 +341,7 @@ export default function BattleFighters() {
   const [log, setLog] = useState([]);
   const [champion, setChampion] = useState(null);
   const [competedIds, setCompetedIds] = useState([]);
+  const [eliminatedOrder, setEliminatedOrder] = useState([]);
 
   const currentMatch = matches[matchIndex];
 
@@ -367,7 +368,6 @@ export default function BattleFighters() {
       .from("casts")
       .select("id, name, show_name, created_at, is_official, is_full_cast")
       .eq("user_id", userData.user.id)
-      .eq("is_full_cast", false)
       .order("created_at", { ascending: false });
 
     if (userCastsError) {
@@ -395,7 +395,7 @@ export default function BattleFighters() {
       officialCasts = officialData || [];
     }
 
-    setAvailableCasts([...officialCasts, ...(userCasts || [])].filter((cast) => !cast.is_full_cast));
+    setAvailableCasts([...officialCasts, ...(userCasts || [])]);
     setLoadingCasts(false);
   }
 
@@ -412,6 +412,8 @@ export default function BattleFighters() {
     setModalSelectedIds(new Set());
     setLoadingModalContestants(true);
 
+    const selectedCast = availableCasts.find((cast) => cast.id === castId);
+
     const { data, error } = await supabase
       .from("contestants")
       .select("id, name, image_url, cast_id")
@@ -424,8 +426,50 @@ export default function BattleFighters() {
       return;
     }
 
-    setModalContestants(data || []);
+    if ((data || []).length > 0 || !selectedCast?.is_full_cast) {
+      setModalContestants(data || []);
+      setLoadingModalContestants(false);
+      return;
+    }
+
+    const linkedContestants = await loadFullCustomCastContestants(castId);
+
+    setModalContestants(linkedContestants);
     setLoadingModalContestants(false);
+  }
+
+  async function loadFullCustomCastContestants(castId) {
+    const possibleLinks = [
+      { table: "full_cast_members", castColumn: "full_cast_id" },
+      { table: "full_cast_members", castColumn: "cast_id" },
+      { table: "cast_members", castColumn: "full_cast_id" },
+      { table: "cast_members", castColumn: "cast_id" },
+    ];
+
+    for (const link of possibleLinks) {
+      const { data: linkRows, error: linkError } = await supabase
+        .from(link.table)
+        .select("contestant_id")
+        .eq(link.castColumn, castId);
+
+      if (linkError || !linkRows || linkRows.length === 0) continue;
+
+      const contestantIds = [...new Set(linkRows.map((row) => row.contestant_id).filter(Boolean))];
+
+      if (contestantIds.length === 0) continue;
+
+      const { data: contestants, error: contestantsError } = await supabase
+        .from("contestants")
+        .select("id, name, image_url, cast_id")
+        .in("id", contestantIds);
+
+      if (!contestantsError && contestants?.length) {
+        const byId = new Map(contestants.map((person) => [person.id, person]));
+        return contestantIds.map((id) => byId.get(id)).filter(Boolean);
+      }
+    }
+
+    return [];
   }
 
   function addSelectedContestantsToRoster() {
@@ -434,7 +478,7 @@ export default function BattleFighters() {
     if (selectedPeople.length === 0) return;
 
     const additions = selectedPeople.map((person) => ({
-      id: `${person.cast_id || modalCastId}-${person.id}`,
+      id: `${modalCastId}-${person.id}`,
       name: person.name,
       image: person.image_url || "",
     }));
@@ -459,10 +503,50 @@ export default function BattleFighters() {
     setMatches([]);
     setChampion(null);
     setCompetedIds([]);
+    setEliminatedOrder([]);
     setLog([]);
     setScreen("menu");
   }
 
+
+
+  function handlePrimaryAction() {
+    if (screen === "roundPreview") {
+      beginRound();
+      return;
+    }
+
+    if (screen === "battle" && currentMatch) {
+      if (!currentMatch.rolled || currentMatch.tied) {
+        rollMatch();
+        return;
+      }
+
+      if (currentMatch.winnerId && !currentMatch.tied) {
+        advanceMatch();
+        return;
+      }
+    }
+
+    if (screen === "winner") {
+      resetToMenu();
+    }
+  }
+
+  useEffect(() => {
+    function onKeyDown(e) {
+      if (e.code !== "Space") return;
+
+      const tag = document.activeElement?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || showAddCastModal) return;
+
+      e.preventDefault();
+      handlePrimaryAction();
+    }
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [screen, currentMatch, showAddCastModal, matchIndex, matches, players, champion]);
 
   function statOutcomeFor(color, playerId) {
     if (!currentMatch || !currentMatch.b) return "neutral";
@@ -524,6 +608,7 @@ export default function BattleFighters() {
     setRoundNum(1);
     setChampion(null);
     setCompetedIds([]);
+    setEliminatedOrder([]);
     setLog([`Battle Fighters begins with ${fixedPlayers.length} fighters. Stat total: ${appliedPointTotal}.`]);
     setScreen("roundPreview");
   }
@@ -593,6 +678,13 @@ export default function BattleFighters() {
     const aliveAfter = updatedPlayers.filter((p) => p.alive);
     setPlayers(updatedPlayers);
     setCompetedIds((prev) => Array.from(new Set([...prev, ...roundCompetitors])));
+
+    if (currentMatch.loserId) {
+      setEliminatedOrder((prev) => [
+        currentMatch.loserId,
+        ...prev.filter((id) => id !== currentMatch.loserId),
+      ]);
+    }
 
     if (aliveAfter.length === 1) {
       setChampion(aliveAfter[0]);
@@ -807,6 +899,20 @@ export default function BattleFighters() {
           display: grid;
           grid-template-columns: repeat(8, minmax(90px, 1fr));
           gap: 10px;
+        }
+        .eliminatedShelf {
+          display: flex;
+          flex-direction: row-reverse;
+          flex-wrap: wrap-reverse;
+          justify-content: flex-start;
+          gap: 10px;
+          margin-top: 14px;
+          padding-top: 14px;
+          border-top: 2px dashed rgba(255,255,255,.18);
+        }
+        .eliminatedShelf .card {
+          width: min(120px, calc(12.5% - 9px));
+          min-width: 90px;
         }
         .card {
           position: relative;
@@ -1203,7 +1309,7 @@ export default function BattleFighters() {
             <h1 style={{ margin: 0 }}>Battle Fighters</h1>
             <div>
               Round {roundNum} · Match {matchIndex + 1}/{matches.length} · Alive:{" "}
-              {players.filter((p) => p.alive).length}
+              {players.filter((p) => p.alive).length} · Spacebar rolls/advances
             </div>
           </div>
 
@@ -1284,9 +1390,24 @@ export default function BattleFighters() {
 
             <div className="box" style={{ marginTop: 16 }}>
               <h2>Full Cast</h2>
-              <div className="castGrid">
-                {players.map((p) => <PlayerCard key={p.id} player={p} competedRound={competedIds.includes(p.id)} />)}
+              <div className="castGrid aliveGrid">
+                {players
+                  .filter((p) => p.alive)
+                  .map((p) => (
+                    <PlayerCard key={p.id} player={p} competedRound={competedIds.includes(p.id)} />
+                  ))}
               </div>
+
+              {eliminatedOrder.length > 0 && (
+                <div className="eliminatedShelf">
+                  {eliminatedOrder
+                    .map((id) => players.find((p) => p.id === id))
+                    .filter(Boolean)
+                    .map((p) => (
+                      <PlayerCard key={p.id} player={p} competedRound={false} />
+                    ))}
+                </div>
+              )}
             </div>
 
             <div className="actions bottomMenu">
