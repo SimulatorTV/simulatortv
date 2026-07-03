@@ -680,10 +680,10 @@ export default function BattleFighters() {
     setCompetedIds((prev) => Array.from(new Set([...prev, ...roundCompetitors])));
 
     if (currentMatch.loserId) {
-      setEliminatedOrder((prev) => [
-        ...prev.filter((id) => id !== currentMatch.loserId),
-        currentMatch.loserId,
-      ]);
+      setEliminatedOrder((prev) => {
+        if (prev.includes(currentMatch.loserId)) return prev;
+        return [...prev, currentMatch.loserId];
+      });
     }
 
     if (aliveAfter.length === 1) {
@@ -757,8 +757,8 @@ export default function BattleFighters() {
     </div>
   );
 
-  const PlayerCard = ({ player, big = false, result = "", showOutcome = false, highlightColor = null, competedRound = false }) => (
-    <div className={`card ${!player.alive ? "dead" : ""} ${competedRound && player.alive ? "competedRound" : ""} ${big ? "big" : ""} ${result}`}>
+  const PlayerCard = ({ player, big = false, result = "", showOutcome = false, highlightColor = null, competedRound = false, currentlyBattling = false }) => (
+    <div className={`card ${!player.alive ? "dead" : ""} ${currentlyBattling && player.alive ? "currentlyBattling" : ""} ${competedRound && player.alive && !currentlyBattling ? "competedRound" : ""} ${big ? "big" : ""} ${result}`}>
       {showOutcome && <OutcomeBoxes playerId={player.id} />}
       <img src={getImage(player)} alt={player.name} />
       <div className="name">{player.name}</div>
@@ -935,6 +935,11 @@ export default function BattleFighters() {
           border-color: #22c55e;
           background: #dcfce7;
           box-shadow: 0 0 18px rgba(34,197,94,.45);
+        }
+        .card.currentlyBattling {
+          border-color: #f97316;
+          background: #fed7aa;
+          box-shadow: 0 0 20px rgba(249,115,22,.55);
         }
         .card.dead {
           background: #111;
@@ -1394,15 +1399,20 @@ export default function BattleFighters() {
                 {players
                   .filter((p) => p.alive)
                   .map((p) => (
-                    <PlayerCard key={p.id} player={p} competedRound={competedIds.includes(p.id)} />
+                    <PlayerCard
+                      key={p.id}
+                      player={p}
+                      competedRound={competedIds.includes(p.id)}
+                      currentlyBattling={p.id === currentMatch.a.id || p.id === currentMatch.b?.id}
+                    />
                   ))}
               </div>
 
               {eliminatedOrder.length > 0 && (
                 <div className="eliminatedShelf">
-                  {players
-                    .filter((p) => !p.alive && p.placement)
-                    .sort((a, b) => b.placement - a.placement)
+                  {eliminatedOrder
+                    .map((id) => players.find((p) => p.id === id))
+                    .filter(Boolean)
                     .map((p) => (
                       <PlayerCard key={p.id} player={p} competedRound={false} />
                     ))}
