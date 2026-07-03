@@ -927,6 +927,9 @@ export default function BattleFighters() {
           grid-template-columns: repeat(8, minmax(90px, 1fr));
           gap: 10px;
         }
+        .eliminatedSlot {
+          min-width: 0;
+        }
         .card {
           position: relative;
           background: #f8fafc;
@@ -1426,14 +1429,17 @@ export default function BattleFighters() {
                 <div className="eliminatedShelf">
                   {eliminatedRows.map((row, rowIndex) => (
                     <div className="eliminatedShelfRow" key={`elim-row-${rowIndex}`}>
-                      {row.map((p, slotIndex) => (
-                        <div
-                          key={p.id}
-                          style={{ gridColumn: `${8 - slotIndex} / ${9 - slotIndex}` }}
-                        >
-                          <PlayerCard player={p} competedRound={false} />
-                        </div>
-                      ))}
+                      {Array.from({ length: 8 }).map((_, columnIndex) => {
+                        const player = row[7 - columnIndex];
+
+                        return (
+                          <div key={`elim-slot-${rowIndex}-${columnIndex}`} className="eliminatedSlot">
+                            {player ? (
+                              <PlayerCard player={player} competedRound={false} />
+                            ) : null}
+                          </div>
+                        );
+                      })}
                     </div>
                   ))}
                 </div>
