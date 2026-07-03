@@ -681,8 +681,8 @@ export default function BattleFighters() {
 
     if (currentMatch.loserId) {
       setEliminatedOrder((prev) => [
-        currentMatch.loserId,
         ...prev.filter((id) => id !== currentMatch.loserId),
+        currentMatch.loserId,
       ]);
     }
 
@@ -902,8 +902,8 @@ export default function BattleFighters() {
         }
         .eliminatedShelf {
           display: flex;
-          flex-direction: row-reverse;
-          flex-wrap: wrap-reverse;
+          flex-direction: row;
+          flex-wrap: wrap;
           justify-content: flex-start;
           gap: 10px;
           margin-top: 14px;
