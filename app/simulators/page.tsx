@@ -62,6 +62,15 @@ export default function SimulatorsPage() {
             buttonClass="bg-purple-600 hover:bg-purple-500"
           />
 
+<SimulatorCard
+  title="Battle Fighters"
+  description="Random 1v1 stat battles where a color roll decides which stat matters and the higher stat survives."
+  href="/simulators/battle-fighters"
+  buttonText="Open Battle Fighters"
+  buttonClass="bg-rose-400 hover:bg-rose-300 text-black"
+/>
+
+
           <SimulatorCard
   title="Battle of the Shows"
   description="Teams of the same cast compete in challenges and eliminations until one team remains."
