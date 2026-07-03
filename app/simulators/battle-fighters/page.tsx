@@ -1184,7 +1184,7 @@ export default function BattleFighters() {
         @media (max-width: 850px) {
           .menuGrid, .battleArea { grid-template-columns: 1fr; }
           .castGrid { grid-template-columns: repeat(4, 1fr); }
-          .eliminatedShelfRow { grid-template-columns: repeat(4, 1fr); }
+          .eliminatedShelfRow { grid-template-columns: repeat(8, minmax(70px, 1fr)); }
           h1 { font-size: 32px; }
         }
       `}</style>
@@ -1426,8 +1426,13 @@ export default function BattleFighters() {
                 <div className="eliminatedShelf">
                   {eliminatedRows.map((row, rowIndex) => (
                     <div className="eliminatedShelfRow" key={`elim-row-${rowIndex}`}>
-                      {row.map((p) => (
-                        <PlayerCard key={p.id} player={p} competedRound={false} />
+                      {row.map((p, slotIndex) => (
+                        <div
+                          key={p.id}
+                          style={{ gridColumn: `${8 - slotIndex} / ${9 - slotIndex}` }}
+                        >
+                          <PlayerCard player={p} competedRound={false} />
+                        </div>
                       ))}
                     </div>
                   ))}
