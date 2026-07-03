@@ -345,6 +345,20 @@ export default function BattleFighters() {
 
   const currentMatch = matches[matchIndex];
 
+  const eliminatedRows = useMemo(() => {
+    const ordered = eliminatedOrder
+      .map((id) => players.find((p) => p.id === id))
+      .filter(Boolean);
+
+    const rows = [];
+
+    for (let i = 0; i < ordered.length; i += 8) {
+      rows.push(ordered.slice(i, i + 8));
+    }
+
+    return rows;
+  }, [eliminatedOrder, players]);
+
   useEffect(() => {
     loadSavedCasts();
   }, []);
@@ -902,17 +916,16 @@ export default function BattleFighters() {
         }
         .eliminatedShelf {
           display: flex;
-          flex-direction: row;
-          flex-wrap: wrap;
-          justify-content: flex-start;
+          flex-direction: column-reverse;
           gap: 10px;
           margin-top: 14px;
           padding-top: 14px;
           border-top: 2px dashed rgba(255,255,255,.18);
         }
-        .eliminatedShelf .card {
-          width: min(120px, calc(12.5% - 9px));
-          min-width: 90px;
+        .eliminatedShelfRow {
+          display: grid;
+          grid-template-columns: repeat(8, minmax(90px, 1fr));
+          gap: 10px;
         }
         .card {
           position: relative;
@@ -1171,6 +1184,7 @@ export default function BattleFighters() {
         @media (max-width: 850px) {
           .menuGrid, .battleArea { grid-template-columns: 1fr; }
           .castGrid { grid-template-columns: repeat(4, 1fr); }
+          .eliminatedShelfRow { grid-template-columns: repeat(4, 1fr); }
           h1 { font-size: 32px; }
         }
       `}</style>
@@ -1408,14 +1422,15 @@ export default function BattleFighters() {
                   ))}
               </div>
 
-              {eliminatedOrder.length > 0 && (
+              {eliminatedRows.length > 0 && (
                 <div className="eliminatedShelf">
-                  {eliminatedOrder
-                    .map((id) => players.find((p) => p.id === id))
-                    .filter(Boolean)
-                    .map((p) => (
-                      <PlayerCard key={p.id} player={p} competedRound={false} />
-                    ))}
+                  {eliminatedRows.map((row, rowIndex) => (
+                    <div className="eliminatedShelfRow" key={`elim-row-${rowIndex}`}>
+                      {row.map((p) => (
+                        <PlayerCard key={p.id} player={p} competedRound={false} />
+                      ))}
+                    </div>
+                  ))}
                 </div>
               )}
             </div>
