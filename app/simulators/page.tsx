@@ -104,6 +104,14 @@ export default function SimulatorsPage() {
           />
 
           <SimulatorCard
+  title="Deal or No Deal Island"
+  description="Compete in case challenges, face the Banker, build the finale prize board, and survive elimination."
+  href="/simulators/deal-or-no-deal-island"
+  buttonText="Open Deal or No Deal Island"
+  buttonClass="bg-amber-500 hover:bg-amber-400 text-black"
+/>
+
+          <SimulatorCard
   title="Call Out"
   description="Most voted person(s) calls out someone that voted them in to a 1v1 elimination. Last person standing wins."
   href="/simulators/call-out"
