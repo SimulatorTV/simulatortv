@@ -46,6 +46,30 @@ function buildOfferSchedule(totalCases) {
   const third = Math.max(1, openable - first - second);
   return [first, second, third].filter(n => n > 0);
 }
+
+function buildFinaleOfferSchedule(totalCases) {
+  const wonAmountCount = Math.max(0, totalCases - 1);
+  const openable = Math.max(0, totalCases - 2);
+
+  if (openable <= 0) return [];
+
+  if (wonAmountCount < 6) {
+    return Array.from({ length: openable }, () => 1);
+  }
+
+  const offerRounds = Math.min(5, openable);
+  const schedule = [];
+  let remainingCases = openable;
+
+  for (let roundIndex = 0; roundIndex < offerRounds; roundIndex++) {
+    const remainingRounds = offerRounds - roundIndex;
+    const casesThisRound = Math.ceil(remainingCases / remainingRounds);
+    schedule.push(casesThisRound);
+    remainingCases -= casesThisRound;
+  }
+
+  return schedule;
+}
 const INTERACTION_RESULTS = [
   { word: "very good", delta: 16, emoji: "🌟" },
   { word: "good", delta: 8, emoji: "🙂" },
@@ -210,6 +234,7 @@ export default function DealOrNoDealIslandSimulator() {
   const [pendingEliminated, setPendingEliminated] = useState(null);
   const [stealEvent, setStealEvent] = useState(null);
   const [challengeMode, setChallengeMode] = useState("pairs");
+  const [decisionBanner, setDecisionBanner] = useState("");
 
   const active = players.filter(p=>!p.placement);
   const selectedCast = roster.filter(p=>selectedIds.has(p.id));
@@ -298,7 +323,7 @@ export default function DealOrNoDealIslandSimulator() {
   function startGame() {
     if(selectedCast.length < 4){ alert("Select at least 4 cast members."); return; }
     const cast=selectedCast.slice(0,26);
-    setPlayers(makePlayers(cast)); setRound(1); setRels({}); setInteractions([]); setDealsTaken([]); setPlacements([]); setWinner(null); setStealEvent(null); setChallengeMode("pairs"); setScreen("cast");
+    setPlayers(makePlayers(cast)); setRound(1); setRels({}); setInteractions([]); setDealsTaken([]); setPlacements([]); setWinner(null); setStealEvent(null); setChallengeMode("pairs"); setDecisionBanner(""); setScreen("cast");
   }
 
   function runInteractions() {
@@ -323,11 +348,13 @@ export default function DealOrNoDealIslandSimulator() {
     const cases = buildChallengeCases(ts.length);
     ts = ts.map((t,i)=>({ ...t, rawCase:cases[i], displayCase:cases[i], caseValue: typeof cases[i] === "number" ? cases[i] : cases[i] === "NOTHING" ? 0.01 : 10000 }));
     const stealTeam = ts.find(t=>t.rawCase === "STEAL");
+
     if (stealTeam) {
-      const traitScore = avg(stealTeam.members.map(m=>m.personality.risk + m.personality.greed));
-      const takeChance = personalityOn ? clamp(0.18 + traitScore / 520, 0.18, 0.62) : 0.38;
-      const take = Math.random() < takeChance;
-      setStealEvent({ stealTeamId: stealTeam.id, take, resolved:false });
+      setStealEvent({
+        stealTeamId: stealTeam.id,
+        take: true,
+        resolved: false,
+      });
     } else {
       setStealEvent(null);
     }
@@ -358,31 +385,45 @@ export default function DealOrNoDealIslandSimulator() {
 
   function resolveSteal() {
     let eventCopy = null;
+
     setTeams(ts => {
-      const copy = ts.map(t=>({ ...t }));
-      const stealTeam = copy.find(t=>t.id === stealEvent?.stealTeamId);
+      const copy = ts.map(t => ({ ...t }));
+      const stealTeam = copy.find(t => t.id === stealEvent?.stealTeamId);
+
       if (!stealTeam) return copy;
-      if (stealEvent.take) {
-        const victims = copy.filter(t=>t.id!==stealTeam.id && typeof t.rawCase === "number");
-        const victim = pick(victims);
-        if (victim) {
-          const stolenValue = victim.caseValue;
-          stealTeam.caseValue = stolenValue;
-          stealTeam.displayCase = `STOLE ${money(stolenValue)}`;
-          stealTeam.stole = true;
-          victim.caseValue = 10000;
-          victim.displayCase = "$10,000 HIDDEN";
-          eventCopy = { ...stealEvent, victimTeamId:victim.id, stolenValue, resolved:true };
-          stealTeam.members.forEach(s=>victim.members.forEach(v=>setRels(prev=>changeRel(prev,s.id,v.id,-14))));
-        }
-      } else {
-        stealTeam.caseValue = 10000;
-        stealTeam.displayCase = "$10,000";
-        eventCopy = { ...stealEvent, declined:true, resolved:true };
-      }
+
+      const victims = copy.filter(
+        t => t.id !== stealTeam.id && typeof t.rawCase === "number"
+      );
+
+      const victim = pick(victims);
+      const stolenValue = victim.caseValue;
+
+      stealTeam.caseValue = stolenValue;
+      stealTeam.displayCase = `STOLE ${money(stolenValue)}`;
+      stealTeam.stole = true;
+
+      victim.caseValue = 0;
+      victim.displayCase = "STOLEN";
+
+      eventCopy = {
+        ...stealEvent,
+        take: true,
+        victimTeamId: victim.id,
+        stolenValue,
+        resolved: true,
+      };
+
+      stealTeam.members.forEach(s =>
+        victim.members.forEach(v =>
+          setRels(prev => changeRel(prev, s.id, v.id, -14))
+        )
+      );
+
       return copy;
     });
-    setStealEvent(eventCopy || { ...stealEvent, resolved:true });
+
+    setStealEvent(eventCopy || { ...stealEvent, take: true, resolved: true });
   }
 
   function finalizeChallengeRanks() {
@@ -418,7 +459,8 @@ export default function DealOrNoDealIslandSimulator() {
     const left = buildLowBoardValues(right.length, right);
     const values = shuffle([...left, ...right]);
     const cases = values.map((value,i)=>({ id:i+1, value, open:false, selected:false, playerCase:false }));
-    setElim({ player:bankerPlayer, cases, playerCase:null, playerCaseId:null, phase:"chooseOwnCase", round:0, openedThisOfferRound:0, offerSchedule:buildOfferSchedule(values.length), offer:null, selectedCaseId:null, openingCase:null, lastOpened:null, acceptedDeal:null, finalOther:null, result:null, resultText:"", prizeAdded:null, ownCaseOpened:false, autoChoice:null });
+    setDecisionBanner("");
+    setElim({ player:bankerPlayer, cases, playerCase:null, playerCaseId:null, phase:"chooseOwnCase", round:0, openedThisOfferRound:0, offerSchedule:buildOfferSchedule(values.length), offer:null, selectedCaseId:null, openingCase:null, lastOpened:null, acceptedDeal:null, finalOther:null, result:null, resultText:"", prizeAdded:null, ownCaseOpened:false, autoChoice:null, isFinale:false });
     setScreen("banker");
   }
 
@@ -488,21 +530,48 @@ export default function DealOrNoDealIslandSimulator() {
 
   function makeDecision(take) {
     const e = elim;
+    if (!e) return;
+
+    setDecisionBanner(take ? "DEAL" : "NO DEAL");
+
     if (take) {
       const win = e.offer > e.playerCase;
       const prizeAdded = e.offer || 0;
-      setDealsTaken(d=>[...d,prizeAdded]);
-      setElim({ ...e, acceptedDeal:e.offer, prizeAdded, result:win?"WIN":"LOSE", resultText: win ? "Good deal — the offer beat their case." : "Bad deal — their case was higher than the offer.", phase:"caseRevealWait" });
+      if (!e.isFinale) setDealsTaken(d => [...d, prizeAdded]);
+
+      setElim({
+        ...e,
+        acceptedDeal: e.offer,
+        prizeAdded,
+        result: win ? "WIN" : "LOSE",
+        resultText: win
+          ? "Good deal — the offer beat their case."
+          : "Bad deal — their case was higher than the offer.",
+        phase: "caseRevealWait",
+      });
       return;
     }
-    const unopened = e.cases.filter(c=>!c.open && !c.playerCase);
+
+    const unopened = e.cases.filter(c => !c.open && !c.playerCase);
     if (unopened.length <= 1) {
       const other = unopened[0]?.value || 0;
       const win = e.playerCase > other;
       const prizeAdded = e.playerCase || 0;
-      setDealsTaken(d=>[...d,prizeAdded]);
-      setElim({ ...e, finalOther:other, prizeAdded, result:win?"WIN":"LOSE", resultText: win ? "Their case was higher than the final case." : "Their case was lower than the final case.", phase:"caseRevealWait" });
-    } else setElim({ ...e, phase:"pick", offer:null, autoChoice:null });
+      if (!e.isFinale) setDealsTaken(d => [...d, prizeAdded]);
+
+      setElim({
+        ...e,
+        finalOther: other,
+        prizeAdded,
+        result: win ? "WIN" : "LOSE",
+        resultText: win
+          ? "Their case was higher than the final case."
+          : "Their case was lower than the final case.",
+        phase: "caseRevealWait",
+      });
+    } else {
+      setElim({ ...e, phase: "pick", offer: null, autoChoice: null });
+    }
   }
 
   function autoDecision() {
@@ -533,10 +602,45 @@ export default function DealOrNoDealIslandSimulator() {
   }
 
   function runFinale() {
-    const player = winner; const high = dealsTaken.length ? dealsTaken : [1000000]; const total = high.reduce((a,b)=>a+b,0);
-    const vals = shuffle([...LOW_CASE_POOL.slice(0, high.length), ...high, total]); const caseVal = pick(vals);
-    const offer = Math.round(avg(vals)*(0.78+Math.random()*.24)/1000)*1000; const take = acceptDeal(offer, vals, player, personalityOn);
-    setWinner({...player, grandPrize:total, finaleCase:caseVal, finaleOffer:offer, tookFinalDeal:take, finalPrize:take?offer:caseVal}); setScreen("winner");
+    const player = winner;
+    if (!player) return;
+
+    const wonValues = dealsTaken.length ? [...dealsTaken] : [0.01];
+    const grandPrize = wonValues.reduce((sum, value) => sum + value, 0);
+    const values = shuffle([...wonValues, grandPrize]);
+    const cases = values.map((value, index) => ({
+      id: index + 1,
+      value,
+      open: false,
+      selected: false,
+      playerCase: false,
+    }));
+
+    setDecisionBanner("");
+    setElim({
+      player,
+      cases,
+      playerCase: null,
+      playerCaseId: null,
+      phase: "chooseOwnCase",
+      round: 0,
+      openedThisOfferRound: 0,
+      offerSchedule: buildFinaleOfferSchedule(values.length),
+      offer: null,
+      selectedCaseId: null,
+      openingCase: null,
+      lastOpened: null,
+      acceptedDeal: null,
+      finalOther: null,
+      result: null,
+      resultText: "",
+      prizeAdded: null,
+      ownCaseOpened: false,
+      autoChoice: null,
+      isFinale: true,
+      grandPrize,
+    });
+    setScreen("banker");
   }
 
   const PlayerCard = ({p, small=false, glow=false, danger=false}) => <div className={`player ${small?"small":""} ${p.placement?"out":""} ${glow?"glow":""} ${danger?"danger":""}`}><img src={p.image}/><b>{p.name}</b></div>;
@@ -550,7 +654,6 @@ export default function DealOrNoDealIslandSimulator() {
       <div className="teamMembers">{t.members.map(m=><PlayerCard key={m.id} p={m} small />)}</div>
       {t.revealed ? <div className="caseAmount">{typeof t.displayCase === "number" ? money(t.displayCase) : t.displayCase === "NOTHING" ? "$0.01" : t.displayCase === "STEAL" ? "STEAL" : t.displayCase}</div> : <button className={t.rawCase === "STEAL" || t.rawCase === "NOTHING" ? "redReveal" : ""} onClick={(ev)=>revealCase(t.id, ev)}>Reveal Case</button>}
       {stolenFrom && <div className="stolenFrom"><b>Stole from:</b><div className="rowCards">{stolenFrom.members.map(m=><PlayerCard key={m.id} p={m} small />)}</div></div>}
-      {stealEvent?.resolved && stealEvent?.declined && stealEvent?.stealTeamId === t.id && <div className="stolenFrom"><b>Steal declined.</b><br/>They kept the $10,000 side.</div>}
       {showRanks && t.rank===1 && <b className="tag good">IMMUNE</b>}
       {isBottom && <b className="tag bad">{challengeMode === "individual" ? "BOTTOM TWO" : "BOTTOM TEAM"}</b>}
     </div>;
@@ -588,23 +691,41 @@ export default function DealOrNoDealIslandSimulator() {
 
     {screen === "challengeReveal" && <div className="panel"><h2>Challenge Case Reveal</h2><p className="centerText">{challengeMode === "individual" ? "Individual challenge. The highest case is immune and chooses which of the bottom two faces the Banker." : challengeMode === "twoTeams" ? "Two-team round. The winning team is safe; one player from the losing team faces the Banker." : "Cases are not ranked until every team has revealed."}</p><button className="big" onClick={(ev)=>revealAllCases(ev)}>Reveal All Cases</button>{stealEvent && allCasesRevealed && !stealEvent.resolved && <p className="centerText">A STEAL case is in play. Resolve it here before rankings are shown.</p>}{stealEvent?.resolved && <p className="centerText">The STEAL case has been resolved on this board.</p>}<div className="teams">{teams.map(t=><TeamCard key={t.id} t={t} showRanks={false}/>)}</div><button className="big" disabled={!allCasesRevealed} onClick={advanceFromChallengeReveal}>{stealEvent && !stealEvent.resolved ? "Resolve Steal Case" : "Advance to Results"}</button></div>}
 
-    {screen === "stealCase" && <div className="panel result"><h2>Red Steal Case</h2>{(() => { const st = teams.find(t=>t.id===stealEvent?.stealTeamId); return st ? <><div className="rowCards">{st.members.map(p=><PlayerCard key={p.id} p={p} small glow />)}</div><p>{st.members.map(m=>m.name).join(" / ")} found the STEAL case.</p><p>{stealEvent.take ? "They decided to use the steal." : "They decided not to risk the steal and keep the $10,000 side."}</p></> : null; })()}<button className="big" onClick={resolveSteal}>Advance — Resolve Steal</button></div>}
+    {screen === "stealCase" && <div className="panel result"><h2>Red Steal Case</h2>{(() => { const st = teams.find(t=>t.id===stealEvent?.stealTeamId); return st ? <><div className="rowCards">{st.members.map(p=><PlayerCard key={p.id} p={p} small glow />)}</div><p>{st.members.map(m=>m.name).join(" / ")} found the STEAL case.</p><p>They use the STEAL and randomly take another player or team&apos;s numbered money case.</p></> : null; })()}<button className="big" onClick={resolveSteal}>Advance — Resolve Steal</button></div>}
 
     {screen === "challengeOutcome" && <div className="panel"><h2>Challenge Results</h2><div className="teams">{teams.map(t=><TeamCard key={t.id} t={t} showRanks={true}/>)}</div><button className="big" onClick={chooseBankerPlayer}>Advance to Winner and Bottom Team</button></div>}
 
     {screen === "bankerChoice" && <div className="panel"><h2>{challengeMode === "individual" ? "Challenge Winner Chooses From The Bottom Two" : challengeMode === "twoTeams" ? "Winning Team Votes From The Losing Team" : "Winning Team Chooses From The Bottom Team"}</h2><div className="choiceLayout"><div><h3>Challenge Winners / Immune</h3><div className="rowCards">{currentWinnerTeam.members.map(p=><PlayerCard key={p.id} p={p} small glow />)}</div></div><div><h3>{challengeMode === "individual" ? "Bottom Two" : "Bottom Team"}</h3><div className="rowCards">{bottomTeam.members.map(p=><PlayerCard key={p.id} p={p} small danger={bankerChoiceLit && p.id===bankerPlayer?.id}/>)}</div></div></div>{!bankerChoiceLit ? <button className="big" onClick={lightBankerChoice}>Advance — Light Up Banker Player</button> : <button className="big" onClick={beginBanker}>Advance to Deal or No Deal</button>}</div>}
 
-    {screen === "banker" && elim && <div className="panel"><h2>{elim.player.name} vs The Banker</h2><div className="topDond"><PlayerCard p={elim.player} small/><div className="ownCase">Their Case<br/><span>{elim.playerCaseId ? elim.playerCaseId : "?"}</span></div></div><div className="bankerLayout"><Board e={elim}/><div><div className="caseRack">{elim.cases.map(c=><button key={c.id} disabled={c.open || (c.playerCase && elim.phase!=="caseRevealWait") || (!["chooseOwnCase","pick","caseRevealWait"].includes(elim.phase)) || (elim.phase==="caseRevealWait" && c.id!==elim.playerCaseId)} onClick={()=>selectCase(c.id)} className={`case ${c.open?"open":""} ${c.selected?"lit":""} ${c.playerCase?"own":""} ${elim.phase==="caseRevealWait" && c.playerCase?"revealOwn":""}`}>{c.open ? "✓" : c.id}</button>)}</div>{elim.phase === "chooseOwnCase" && <div className="centerText">{controlElim ? "Pick the player's case." : "The player chooses a case."}</div>}{elim.phase === "pick" && <div className="centerText">{controlElim ? "Select one grey case, then advance." : "A case is selected."} Cases left to open before the next offer: <b>{casesToOpen(elim)}</b></div>}{elim.phase === "opening" && <div className="openingAnim">{money(elim.openingCase.value)}</div>}{elim.phase === "offer" && <div className="offer"><h2>Banker Offer</h2><div className="offerMoney">{money(elim.offer)}</div><p>Advance to Deal or No Deal.</p></div>}{elim.phase === "decision" && <div className="offer"><h2>Deal or No Deal?</h2><div className="offerMoney">{money(elim.offer)}</div>{chooseDeals && <><h3 className="decisionPick">{elim.autoChoice ? "DEAL" : "NO DEAL"}</h3><p>Advance follows this decision, or choose below to override it.</p></>}<button onClick={()=>makeDecision(true)}>Deal</button><button onClick={()=>makeDecision(false)}>No Deal</button></div>}{elim.phase === "caseRevealWait" && <div className="offer"><h2>Open Their Case</h2><p>Click case #{elim.playerCaseId} to reveal it.</p></div>}{elim.phase === "caseReveal" && <div className="offer"><h2>Case Reveal</h2><p>Their case was <b>{money(elim.playerCase)}</b>.</p>{elim.acceptedDeal && <p>Accepted deal: <b>{money(elim.acceptedDeal)}</b></p>}{elim.finalOther != null && <p>Final other case: <b>{money(elim.finalOther)}</b></p>}<p>Money added to the finale board: <b>{money(elim.prizeAdded || 0)}</b></p><h3>{elim.resultText}</h3></div>}{["chooseOwnCase","pick"].includes(elim.phase) && !controlElim && <button className="big" onClick={autoSelectCase}>Random</button>}{["pick","opening","offer","decision","caseReveal"].includes(elim.phase) && <button className="big" disabled={elim.phase==="pick" && !elim.selectedCaseId} onClick={elim.phase==="caseReveal"?chooseEliminationTarget:advanceBanker}>Advance</button>}</div></div></div>}
+    {screen === "banker" && elim && <div className="panel bankerPanel"><div className="bankerHeaderBox"><h2>{elim.isFinale ? "Final Deal or No Deal" : `${elim.player.name} vs The Banker`}</h2>{decisionBanner && <div className="decisionBanner">{decisionBanner}</div>}</div><div className="topDond"><PlayerCard p={elim.player} small/><div className="ownCase">Their Case<br/><span>{elim.playerCaseId ? elim.playerCaseId : "?"}</span></div></div><div className="bankerLayout"><Board e={elim}/><div><div className="caseRack">{elim.cases.map(c=><button key={c.id} disabled={c.open || (c.playerCase && elim.phase!=="caseRevealWait") || (!["chooseOwnCase","pick","caseRevealWait"].includes(elim.phase)) || (elim.phase==="caseRevealWait" && c.id!==elim.playerCaseId)} onClick={()=>selectCase(c.id)} className={`case ${c.open?"open":""} ${c.selected?"lit":""} ${c.playerCase?"own":""} ${elim.phase==="caseRevealWait" && c.playerCase?"revealOwn":""}`}>{c.open ? "✓" : c.id}</button>)}</div>{elim.phase === "chooseOwnCase" && <div className="centerText">{controlElim ? "Pick the player's case." : "The player chooses a case."}</div>}{elim.phase === "pick" && <div className="centerText">{controlElim ? "Select one grey case, then advance." : "A case is selected."} Cases left to open before the next offer: <b>{casesToOpen(elim)}</b></div>}{elim.phase === "opening" && <div className="openingAnim">{money(elim.openingCase.value)}</div>}{elim.phase === "offer" && <div className="offer"><h2>Banker Offer</h2><div className="offerMoney">{money(elim.offer)}</div><p>Advance to Deal or No Deal.</p></div>}{elim.phase === "decision" && <div className="offer"><h2>Deal or No Deal?</h2><div className="offerMoney">{money(elim.offer)}</div>{chooseDeals && <><h3 className="decisionPick">{elim.autoChoice ? "DEAL" : "NO DEAL"}</h3><p>Advance follows this decision, or choose below to override it.</p></>}<button onClick={()=>makeDecision(true)}>Deal</button><button onClick={()=>makeDecision(false)}>No Deal</button></div>}{elim.phase === "caseRevealWait" && <div className="offer"><h2>Open Their Case</h2><p>Click case #{elim.playerCaseId} to reveal it.</p></div>}{elim.phase === "caseReveal" && <div className="offer"><h2>Case Reveal</h2><p>Their case was <b>{money(elim.playerCase)}</b>.</p>{elim.acceptedDeal && <p>Accepted deal: <b>{money(elim.acceptedDeal)}</b></p>}{elim.finalOther != null && <p>Final other case: <b>{money(elim.finalOther)}</b></p>}{!elim.isFinale && <p>Money added to the finale board: <b>{money(elim.prizeAdded || 0)}</b></p>}{elim.isFinale && <p>Final winnings: <b>{money(elim.acceptedDeal || elim.playerCase || 0)}</b></p>}<h3>{elim.resultText}</h3></div>}{["chooseOwnCase","pick"].includes(elim.phase) && !controlElim && <button className="big" onClick={autoSelectCase}>Random</button>}{["pick","opening","offer","decision","caseReveal"].includes(elim.phase) && <button className="big fixedAdvance" disabled={elim.phase==="pick" && !elim.selectedCaseId} onClick={()=>{
+  if(elim.phase==="caseReveal"){
+    if(elim.isFinale){
+      setWinner({
+        ...elim.player,
+        grandPrize: elim.grandPrize || dealsTaken.reduce((a,b)=>a+b,0),
+        finaleCase: elim.playerCase,
+        finaleOffer: elim.acceptedDeal || 0,
+        tookFinalDeal: Boolean(elim.acceptedDeal),
+        finalPrize: elim.acceptedDeal || elim.playerCase || 0,
+      });
+      setScreen("winner");
+    } else {
+      chooseEliminationTarget();
+    }
+  } else {
+    advanceBanker();
+  }
+}}>Advance</button>}</div></div></div>}
 
     {screen === "eliminationLose" && pendingEliminated && <div className="panel result"><h2>{elim.player.name} Lost To The Banker</h2><PlayerCard p={pendingEliminated}/><p>They lose and are eliminated.</p><button className="big" onClick={finalizeElimination}>Advance</button></div>}
 
     {screen === "eliminationWin" && pendingEliminated && <div className="panel"><h2>{elim.player.name} Beat The Banker</h2><div className="targetReveal"><PlayerCard p={elim.player} small/><div className="mystery" onClick={()=>setTargetReveal(true)}>{targetReveal ? <PlayerCard p={pendingEliminated} small/> : "?"}</div></div><h3>Eligible Players To Eliminate</h3><div className="grid smallGrid">{eligibleTargets.map(p=><PlayerCard key={p.id} p={p}/>)}</div>{!targetReveal ? <button className="big" onClick={()=>setTargetReveal(true)}>Reveal Who They Chose</button> : <button className="big" onClick={finalizeElimination}>Eliminate {pendingEliminated.name}</button>}</div>}
 
-    {screen === "finale" && winner && <div className="panel"><h2>Finale</h2><PlayerCard p={winner}/><p>{winner.name} is the last player standing. The final board is built from every deal taken or kept case value from elimination rounds.</p><button className="big" onClick={runFinale}>Play Final Deal or No Deal</button></div>}
-    {screen === "winner" && winner && <div className="panel winner"><h2>🏆 {winner.name} Wins!</h2><PlayerCard p={winner}/><p>Grand prize case total: <b>{money(winner.grandPrize || 0)}</b></p><p>Final case: <b>{money(winner.finaleCase || 0)}</b></p><p>Final offer: <b>{money(winner.finaleOffer || 0)}</b></p><h2>Final Winnings: {money(winner.finalPrize || 0)}</h2><h3>Placements</h3><div className="placements">{placements.map(p=><p key={p.id}>#{p.placement} {p.name} — eliminated by {p.eliminatedBy}</p>)}</div><button onClick={()=>setScreen("menu")}>Back to Main Menu</button></div>}
+    {screen === "finale" && winner && <div className="panel"><h2>Finale</h2><PlayerCard p={winner}/><p>{winner.name} is the last player standing and must play one final Deal or No Deal against the Banker.</p><p>The board contains every dollar amount won during elimination rounds, plus one grand-prize case equal to all of those amounts added together.</p><button className="big" onClick={runFinale}>Start Final Deal or No Deal</button></div>}
+    {screen === "winner" && winner && <div className="panel winner"><h2>🏆 {winner.name} Wins!</h2><PlayerCard p={winner}/><p>Grand-prize case total: <b>{money(winner.grandPrize || 0)}</b></p><p>Their final case: <b>{money(winner.finaleCase || 0)}</b></p>{winner.tookFinalDeal && <p>Accepted final offer: <b>{money(winner.finaleOffer || 0)}</b></p>}<h2>Final Winnings: {money(winner.finalPrize || 0)}</h2><h3>Placements</h3><div className="placements">{placements.map(p=><p key={p.id}>#{p.placement} {p.name} — eliminated by {p.eliminatedBy}</p>)}</div><button onClick={()=>setScreen("menu")}>Back to Main Menu</button></div>}
   </div>;
 }
 
 const css = `
-.sim-wrap{font-family:Arial,Helvetica,sans-serif;background:#071323;color:white;min-height:100vh;padding:18px}h1{text-align:center;color:#ffd76a}.panel{max-width:1220px;margin:0 auto;background:#10243b;border:2px solid #31506f;border-radius:16px;padding:18px;box-shadow:0 0 22px #0008}.sim-wrap .big,.sim-wrap .panel button{background:#d6a632;color:#111;border:0;border-radius:10px;font-weight:900;padding:12px 16px;margin:8px;cursor:pointer}.redReveal{background:#b62525!important;color:white!important;box-shadow:0 0 12px #ff4848;border:2px solid #ff9b9b!important}.sim-wrap .big:disabled,.sim-wrap .panel button:disabled{opacity:.35;cursor:not-allowed}.castSelect,.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(125px,1fr));gap:10px}.selectCard,.player{background:#fff;color:#111;border-radius:12px;padding:8px;text-align:center;border:2px solid #222}.selectCard img,.player img{width:100%;height:105px;object-fit:cover;border-radius:9px}.selectCard{display:flex;flex-direction:column;gap:4px}.player.out{filter:grayscale(1);background:#111;color:#aaa}.player.small{width:92px;display:inline-block;margin:4px;vertical-align:top}.player.small img{height:70px}.player.glow{box-shadow:0 0 16px #43ff77;border-color:#43ff77}.player.danger{box-shadow:0 0 16px #ff3b3b;border-color:#ff3b3b;background:#ffecec}.toggles,.buttons{text-align:center;margin:10px}.toggles label{margin:12px;display:inline-block}.moneyline{text-align:center;color:#ffd76a;margin:10px}.interactionGrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(330px,1fr));gap:10px}.interaction{display:flex;align-items:center;justify-content:space-between;gap:8px;background:#071323;border:1px solid #31506f;border-radius:14px;padding:8px}.interactionText{text-align:center;line-height:1.35}.teams{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px}.team{background:#0b1829;border:2px solid #4b6684;border-radius:14px;padding:10px;text-align:center}.team.immune{border-color:#37d66b;box-shadow:0 0 16px #37d66b66}.team.bottom{border-color:#ff4d4d;box-shadow:0 0 16px #ff4d4d66}.team.stealResolved{border-color:#ff3b3b;box-shadow:0 0 18px #ff3b3b88}.stolenFrom{background:#230b0b;border:1px solid #ff5555;border-radius:10px;margin:8px 0;padding:8px;color:#ffe0e0}.teamMembers{min-height:98px}.caseAmount{font-size:26px;font-weight:1000;color:#ffe28a;margin:10px}.tag{display:inline-block;margin:5px;padding:5px 8px;border-radius:8px}.tag.good{background:#1f8b3e}.tag.bad{background:#9f2323}.choiceLayout{display:grid;grid-template-columns:1fr 1fr;gap:18px;text-align:center}.rowCards{display:flex;justify-content:center;flex-wrap:wrap}.topDond{display:flex;align-items:center;justify-content:center;gap:16px}.ownCase{width:120px;height:105px;background:#eee;color:#111;border:4px solid #999;border-radius:12px;text-align:center;font-weight:1000;padding-top:14px}.ownCase span{font-size:48px}.bankerLayout{display:grid;grid-template-columns:330px 1fr;gap:18px;align-items:start}.bankerLayout .dondBoard{position:sticky;top:0;align-self:start;transform:translateY(-16px)}.dondBoard{display:grid;grid-template-columns:1fr 1fr;background:#050b13;border:4px solid #b98924;border-radius:14px;padding:10px;gap:8px}.money{background:#203c62;margin:6px 0;padding:8px;border-radius:6px;text-align:right;font-weight:1000;color:#cbe6ff}.money.high{background:#6b4b08;color:#ffe394}.money.gone{opacity:.22;text-decoration:line-through}.caseRack{display:grid;grid-template-columns:repeat(auto-fill,minmax(68px,1fr));gap:8px;margin-top:12px}.case{background:#c9c9c9;color:#111;border:3px solid #777;border-radius:9px;padding:15px 5px;text-align:center;font-weight:1000;font-size:22px;min-height:58px}.case.lit{box-shadow:0 0 18px #fff;border-color:#fff;background:#efefef}.case.open{background:#444;color:#fff;border-color:#222}.case.own{background:#e9e9e9;border-style:dashed;color:#111}.case.revealOwn{box-shadow:0 0 18px #ffd76a;border-color:#ffd76a}.centerText{text-align:center;margin:12px;color:#ffe28a}.openingAnim{background:#050505;color:#fff;font-size:34px;font-weight:1000;border:3px solid #fff;border-radius:12px;max-width:280px;margin:16px auto;padding:24px;text-align:center;animation:pop .45s ease}.offer{text-align:center;background:#06111f;border:2px solid #ffd76a;border-radius:14px;padding:14px;margin-top:12px}.offerMoney{font-size:42px;font-weight:1000;color:#ffd76a}.decisionPick{font-size:30px;color:#ffd76a;letter-spacing:1px;margin:10px 0}.result{text-align:center}.result>.player{max-width:150px;margin:12px auto}.targetReveal{display:flex;align-items:center;justify-content:center;gap:18px}.mystery{width:125px;min-height:125px;background:#071323;border:3px dashed #ffd76a;border-radius:14px;display:flex;align-items:center;justify-content:center;font-size:70px;font-weight:1000;cursor:pointer}.mystery .player.small{width:105px;margin:0;font-size:12px}.mystery .player.small b{display:block;font-size:12px;line-height:1.1;overflow-wrap:anywhere;word-break:normal}.mystery .player.small img{height:74px}.smallGrid{grid-template-columns:repeat(auto-fill,minmax(105px,1fr))}.winner{text-align:center}.placements{max-width:500px;margin:auto;text-align:left}@keyframes pop{0%{transform:scale(.75);opacity:.2}100%{transform:scale(1);opacity:1}}@media(max-width:700px){.bankerLayout,.choiceLayout{grid-template-columns:1fr}.castSelect,.grid{grid-template-columns:repeat(3,1fr)}.selectCard img,.player img{height:80px}.sim-wrap{padding:8px}.panel{padding:10px}.interactionGrid{grid-template-columns:1fr}.interaction{flex-direction:column}.offerMoney{font-size:30px}}.castModalBackdrop{position:fixed;inset:0;background:#000d;z-index:9999;display:flex;align-items:center;justify-content:center;padding:14px}.castModal{width:min(1100px,100%);max-height:90vh;overflow:hidden;background:#101010;border:1px solid #444;border-radius:20px;color:white}.castModalHeader{display:flex;justify-content:space-between;align-items:center;padding:16px;border-bottom:1px solid #333}.castModalHeader h2,.castModalHeader p{margin:0}.castModalBody{display:grid;grid-template-columns:300px 1fr;height:72vh;max-height:72vh;min-height:0;overflow:hidden}.castSidebar,.contestantPane{min-height:0;overflow-y:auto;overflow-x:hidden;padding:14px;overscroll-behavior:contain}.castSidebar{border-right:1px solid #333;scrollbar-gutter:stable}.castChoice{display:block;width:100%;text-align:left;background:#191919!important;color:white!important;margin:5px 0!important}.castChoice.active{background:#d6a632!important;color:#111!important}.castChoice small{display:block;opacity:.7}.modalActions{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px}.modalContestantGrid{display:grid;grid-template-columns:repeat(6,1fr);gap:9px}.modalPerson{padding:0!important;margin:0!important;background:#222!important;color:white!important;overflow:hidden;border:2px solid transparent!important}.modalPerson.active{border-color:#ffd76a!important}.modalPerson:not(.active){opacity:.4;filter:grayscale(1)}.modalPerson img,.noImage{width:100%;aspect-ratio:1/1;object-fit:cover}.modalPerson span{display:block;padding:5px;font-size:12px}.selectCard{position:relative;cursor:pointer}.selectCard.unselected{opacity:.35;filter:grayscale(1)}.selectionBadge{position:absolute;left:5px;top:5px;background:#071323;color:white;border-radius:999px;padding:2px 7px;font-weight:900;z-index:2}.removeCastButton{position:absolute!important;right:-5px;top:-5px;width:25px;height:25px;padding:0!important;margin:0!important;border-radius:999px!important;background:#ef4444!important;color:white!important;z-index:3}.manageLink{display:inline-flex;background:#d6a632;color:#111;padding:12px 16px;border-radius:10px;font-weight:900;text-decoration:none;margin:8px}.emptyRoster{padding:28px;border:2px dashed #31506f;border-radius:14px;text-align:center;font-weight:900;color:#b9cae0}@media(max-width:700px){.castModalBody{grid-template-columns:1fr;height:76vh;max-height:76vh;grid-template-rows:minmax(150px,220px) minmax(0,1fr)}.castSidebar{max-height:none;border-right:0;border-bottom:1px solid #333}.modalContestantGrid{grid-template-columns:repeat(3,1fr)}}
+.sim-wrap{font-family:Arial,Helvetica,sans-serif;background:#071323;color:white;min-height:100vh;padding:18px}h1{text-align:center;color:#ffd76a}.panel{max-width:1220px;margin:0 auto;background:#10243b;border:2px solid #31506f;border-radius:16px;padding:18px;box-shadow:0 0 22px #0008}.sim-wrap .big,.sim-wrap .panel button{background:#d6a632;color:#111;border:0;border-radius:10px;font-weight:900;padding:12px 16px;margin:8px;cursor:pointer}.redReveal{background:#b62525!important;color:white!important;box-shadow:0 0 12px #ff4848;border:2px solid #ff9b9b!important}.sim-wrap .big:disabled,.sim-wrap .panel button:disabled{opacity:.35;cursor:not-allowed}.castSelect,.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(125px,1fr));gap:10px}.selectCard,.player{background:#fff;color:#111;border-radius:12px;padding:8px;text-align:center;border:2px solid #222}.selectCard img,.player img{width:100%;height:105px;object-fit:cover;border-radius:9px}.selectCard{display:flex;flex-direction:column;gap:4px}.player.out{filter:grayscale(1);background:#111;color:#aaa}.player.small{width:92px;display:inline-block;margin:4px;vertical-align:top}.player.small img{height:70px}.player.glow{box-shadow:0 0 16px #43ff77;border-color:#43ff77}.player.danger{box-shadow:0 0 16px #ff3b3b;border-color:#ff3b3b;background:#ffecec}.toggles,.buttons{text-align:center;margin:10px}.toggles label{margin:12px;display:inline-block}.moneyline{text-align:center;color:#ffd76a;margin:10px}.interactionGrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(330px,1fr));gap:10px}.interaction{display:flex;align-items:center;justify-content:space-between;gap:8px;background:#071323;border:1px solid #31506f;border-radius:14px;padding:8px}.interactionText{text-align:center;line-height:1.35}.teams{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px}.team{background:#0b1829;border:2px solid #4b6684;border-radius:14px;padding:10px;text-align:center}.team.immune{border-color:#37d66b;box-shadow:0 0 16px #37d66b66}.team.bottom{border-color:#ff4d4d;box-shadow:0 0 16px #ff4d4d66}.team.stealResolved{border-color:#ff3b3b;box-shadow:0 0 18px #ff3b3b88}.stolenFrom{background:#230b0b;border:1px solid #ff5555;border-radius:10px;margin:8px 0;padding:8px;color:#ffe0e0}.teamMembers{min-height:98px}.caseAmount{font-size:26px;font-weight:1000;color:#ffe28a;margin:10px}.tag{display:inline-block;margin:5px;padding:5px 8px;border-radius:8px}.tag.good{background:#1f8b3e}.tag.bad{background:#9f2323}.choiceLayout{display:grid;grid-template-columns:1fr 1fr;gap:18px;text-align:center}.rowCards{display:flex;justify-content:center;flex-wrap:wrap}.topDond{display:flex;align-items:center;justify-content:center;gap:16px}.ownCase{width:120px;height:105px;background:#eee;color:#111;border:4px solid #999;border-radius:12px;text-align:center;font-weight:1000;padding-top:14px}.ownCase span{font-size:48px}.bankerLayout{display:grid;grid-template-columns:330px 1fr;gap:18px;align-items:start}.bankerLayout .dondBoard{position:sticky;top:0;align-self:start;transform:translateY(-16px)}.dondBoard{display:grid;grid-template-columns:1fr 1fr;background:#050b13;border:4px solid #b98924;border-radius:14px;padding:10px;gap:8px}.money{background:#203c62;margin:6px 0;padding:8px;border-radius:6px;text-align:right;font-weight:1000;color:#cbe6ff}.money.high{background:#6b4b08;color:#ffe394}.money.gone{opacity:.22;text-decoration:line-through}.caseRack{display:grid;grid-template-columns:repeat(auto-fill,minmax(68px,1fr));gap:8px;margin-top:12px}.case{background:#c9c9c9;color:#111;border:3px solid #777;border-radius:9px;padding:15px 5px;text-align:center;font-weight:1000;font-size:22px;min-height:58px}.case.lit{box-shadow:0 0 18px #fff;border-color:#fff;background:#efefef}.case.open{background:#444;color:#fff;border-color:#222}.case.own{background:#e9e9e9;border-style:dashed;color:#111}.case.revealOwn{box-shadow:0 0 18px #ffd76a;border-color:#ffd76a}.centerText{text-align:center;margin:12px;color:#ffe28a}.openingAnim{background:#050505;color:#fff;font-size:34px;font-weight:1000;border:3px solid #fff;border-radius:12px;max-width:280px;margin:16px auto;padding:24px;text-align:center;animation:pop .45s ease}.offer{text-align:center;background:#06111f;border:2px solid #ffd76a;border-radius:14px;padding:14px;margin-top:12px}.offerMoney{font-size:42px;font-weight:1000;color:#ffd76a}.bankerPanel{position:relative}.bankerHeaderBox{min-height:92px;display:flex;flex-direction:column;align-items:center;justify-content:center}.decisionBanner{margin-top:6px;background:#d6a632;color:#111;border-radius:999px;padding:8px 18px;font-size:22px;font-weight:1000;letter-spacing:1px}.fixedAdvance{display:block!important;min-width:160px;margin:18px auto 4px!important;position:sticky;bottom:12px;z-index:20;box-shadow:0 5px 18px #0009}.decisionPick{font-size:30px;color:#ffd76a;letter-spacing:1px;margin:10px 0}.result{text-align:center}.result>.player{max-width:150px;margin:12px auto}.targetReveal{display:flex;align-items:center;justify-content:center;gap:18px}.mystery{width:125px;min-height:125px;background:#071323;border:3px dashed #ffd76a;border-radius:14px;display:flex;align-items:center;justify-content:center;font-size:70px;font-weight:1000;cursor:pointer}.mystery .player.small{width:105px;margin:0;font-size:12px}.mystery .player.small b{display:block;font-size:12px;line-height:1.1;overflow-wrap:anywhere;word-break:normal}.mystery .player.small img{height:74px}.smallGrid{grid-template-columns:repeat(auto-fill,minmax(105px,1fr))}.winner{text-align:center}.placements{max-width:500px;margin:auto;text-align:left}@keyframes pop{0%{transform:scale(.75);opacity:.2}100%{transform:scale(1);opacity:1}}@media(max-width:700px){.bankerLayout,.choiceLayout{grid-template-columns:1fr}.castSelect,.grid{grid-template-columns:repeat(3,1fr)}.selectCard img,.player img{height:80px}.sim-wrap{padding:8px}.panel{padding:10px}.interactionGrid{grid-template-columns:1fr}.interaction{flex-direction:column}.offerMoney{font-size:30px}}.castModalBackdrop{position:fixed;inset:0;background:#000d;z-index:9999;display:flex;align-items:center;justify-content:center;padding:14px}.castModal{width:min(1100px,100%);max-height:90vh;overflow:hidden;background:#101010;border:1px solid #444;border-radius:20px;color:white}.castModalHeader{display:flex;justify-content:space-between;align-items:center;padding:16px;border-bottom:1px solid #333}.castModalHeader h2,.castModalHeader p{margin:0}.castModalBody{display:grid;grid-template-columns:300px 1fr;height:72vh;max-height:72vh;min-height:0;overflow:hidden}.castSidebar,.contestantPane{min-height:0;overflow-y:auto;overflow-x:hidden;padding:14px;overscroll-behavior:contain}.castSidebar{border-right:1px solid #333;scrollbar-gutter:stable}.castChoice{display:block;width:100%;text-align:left;background:#191919!important;color:white!important;margin:5px 0!important}.castChoice.active{background:#d6a632!important;color:#111!important}.castChoice small{display:block;opacity:.7}.modalActions{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px}.modalContestantGrid{display:grid;grid-template-columns:repeat(6,1fr);gap:9px}.modalPerson{padding:0!important;margin:0!important;background:#222!important;color:white!important;overflow:hidden;border:2px solid transparent!important}.modalPerson.active{border-color:#ffd76a!important}.modalPerson:not(.active){opacity:.4;filter:grayscale(1)}.modalPerson img,.noImage{width:100%;aspect-ratio:1/1;object-fit:cover}.modalPerson span{display:block;padding:5px;font-size:12px}.selectCard{position:relative;cursor:pointer}.selectCard.unselected{opacity:.35;filter:grayscale(1)}.selectionBadge{position:absolute;left:5px;top:5px;background:#071323;color:white;border-radius:999px;padding:2px 7px;font-weight:900;z-index:2}.removeCastButton{position:absolute!important;right:-5px;top:-5px;width:25px;height:25px;padding:0!important;margin:0!important;border-radius:999px!important;background:#ef4444!important;color:white!important;z-index:3}.manageLink{display:inline-flex;background:#d6a632;color:#111;padding:12px 16px;border-radius:10px;font-weight:900;text-decoration:none;margin:8px}.emptyRoster{padding:28px;border:2px dashed #31506f;border-radius:14px;text-align:center;font-weight:900;color:#b9cae0}@media(max-width:700px){.castModalBody{grid-template-columns:1fr;height:76vh;max-height:76vh;grid-template-rows:minmax(150px,220px) minmax(0,1fr)}.castSidebar{max-height:none;border-right:0;border-bottom:1px solid #333}.modalContestantGrid{grid-template-columns:repeat(3,1fr)}}
 `;
