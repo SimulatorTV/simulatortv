@@ -183,9 +183,9 @@ function makeWall(
 
   return Bodies.rectangle(x, y, width, height, {
     isStatic: true,
-    friction: 0.008,
+    friction: 0.001,
     frictionStatic: 0,
-    restitution: 0.9,
+    restitution: 0.93,
     collisionFilter: { category: CATEGORY_STAGE },
     render: {
       fillStyle: "#d7dbe4",
@@ -1600,6 +1600,7 @@ export default function MarbleRace({
       }
     >
   >(new Map());
+  const pinchEscapeRef = useRef<Map<number, number>>(new Map());
   const countdownTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const speedRef = useRef<1 | 2 | 4>(1);
   const eliminationDisplayRef = useRef<{ name: string; place: number } | null>(
@@ -1669,6 +1670,63 @@ export default function MarbleRace({
     Body.setAngularVelocity(body, (Math.random() - 0.5) * 0.5);
   }, []);
 
+  const flingFromSpinnerPinch = useCallback(
+    (
+      marble: Matter.Body,
+      spinner: ObstacleBody,
+      nearbySurface: Matter.Body,
+      now: number,
+    ) => {
+      const lastEscape = pinchEscapeRef.current.get(marble.id) ?? 0;
+      if (now - lastEscape < 850) return;
+
+      const awayFromSpinnerX = marble.position.x - spinner.position.x;
+      const awayFromSpinnerY = marble.position.y - spinner.position.y;
+      const magnitude = Math.max(
+        Math.hypot(awayFromSpinnerX, awayFromSpinnerY),
+        0.001,
+      );
+
+      const side =
+        Math.abs(awayFromSpinnerX) > 2
+          ? Math.sign(awayFromSpinnerX)
+          : Math.random() < 0.5
+            ? -1
+            : 1;
+
+      // Move the marble a little out of overlap first, then launch it.
+      Body.translate(marble, {
+        x: side * (MARBLE_RADIUS * 0.7),
+        y: -MARBLE_RADIUS * 0.55,
+      });
+
+      Body.setVelocity(marble, {
+        x:
+          side * (7.5 + Math.random() * 3.5) +
+          (awayFromSpinnerX / magnitude) * 2,
+        y: -7.5 - Math.random() * 3.5,
+      });
+
+      Body.setAngularVelocity(
+        marble,
+        side * (0.35 + Math.random() * 0.35),
+      );
+
+      pinchEscapeRef.current.set(marble.id, now);
+
+      const tracking = movementRef.current.get(marble.id);
+      if (tracking) {
+        tracking.x = marble.position.x;
+        tracking.y = marble.position.y;
+        tracking.lowestY = marble.position.y;
+        tracking.lastMovedAt = now;
+        tracking.lastProgressAt = now;
+        tracking.stuckCount = 0;
+      }
+    },
+    [],
+  );
+
   const buildRound = useCallback(
     (roundContestants: MarbleContestant[], roundNumber: number) => {
       if (!sceneRef.current || roundContestants.length < 1) return;
@@ -1725,10 +1783,10 @@ export default function MarbleRace({
         const y = START_Y + 38 + row * (MARBLE_RADIUS * 2.15);
 
         const marble = Bodies.circle(x, y, MARBLE_RADIUS, {
-          restitution: 0.96,
-          friction: 0.0015,
+          restitution: 0.98,
+          friction: 0.0002,
           frictionStatic: 0,
-          frictionAir: 0.0012,
+          frictionAir: 0.00045,
           density: 0.0038,
           collisionFilter: {
             category: CATEGORY_MARBLE,
@@ -1832,6 +1890,80 @@ export default function MarbleRace({
 
         if (roundStartedRef.current && !roundResolvingRef.current) {
           const now = Date.now();
+
+          const worldBodies = Composite.allBodies(engine.world) as ObstacleBody[];
+          const rotatingBodies = worldBodies.filter(
+            (body) =>
+              body.plugin?.rotateSpeed !== undefined &&
+              Math.abs(body.plugin.rotateSpeed) > 0,
+          );
+          const solidSurfaces = worldBodies.filter(
+            (body) =>
+              body.isStatic &&
+              !body.isSensor &&
+              body.plugin?.rotateSpeed === undefined &&
+              body.label !== "start-gate",
+          );
+
+          for (const meta of marbleRefs.current.values()) {
+            if (qualifiersRef.current.has(meta.contestant.id)) continue;
+
+            const marble = meta.body;
+
+            for (const spinner of rotatingBodies) {
+              const spinnerPadding = MARBLE_RADIUS + 18;
+              const nearSpinner =
+                marble.position.x >= spinner.bounds.min.x - spinnerPadding &&
+                marble.position.x <= spinner.bounds.max.x + spinnerPadding &&
+                marble.position.y >= spinner.bounds.min.y - spinnerPadding &&
+                marble.position.y <= spinner.bounds.max.y + spinnerPadding;
+
+              if (!nearSpinner) continue;
+
+              const nearbySurface = solidSurfaces.find((surface) => {
+                const surfacePadding = MARBLE_RADIUS + 8;
+                const nearSurface =
+                  marble.position.x >=
+                    surface.bounds.min.x - surfacePadding &&
+                  marble.position.x <=
+                    surface.bounds.max.x + surfacePadding &&
+                  marble.position.y >=
+                    surface.bounds.min.y - surfacePadding &&
+                  marble.position.y <=
+                    surface.bounds.max.y + surfacePadding;
+
+                if (!nearSurface) return false;
+
+                const spinnerAndSurfaceClose =
+                  spinner.bounds.max.x + MIN_SAFE_GAP >
+                    surface.bounds.min.x &&
+                  spinner.bounds.min.x - MIN_SAFE_GAP <
+                    surface.bounds.max.x &&
+                  spinner.bounds.max.y + MIN_SAFE_GAP >
+                    surface.bounds.min.y &&
+                  spinner.bounds.min.y - MIN_SAFE_GAP <
+                    surface.bounds.max.y;
+
+                return spinnerAndSurfaceClose;
+              });
+
+              if (!nearbySurface) continue;
+
+              const slowEnoughToBePinched =
+                marble.speed < 2.4 ||
+                Math.abs(marble.velocity.y) < 1.2;
+
+              if (slowEnoughToBePinched) {
+                flingFromSpinnerPinch(
+                  marble,
+                  spinner,
+                  nearbySurface,
+                  now,
+                );
+                break;
+              }
+            }
+          }
 
           for (const meta of marbleRefs.current.values()) {
             if (qualifiersRef.current.has(meta.contestant.id)) continue;
@@ -2138,7 +2270,7 @@ export default function MarbleRace({
       Render.run(render);
       Runner.run(runner, engine);
     },
-    [destroyWorld, resetMarbleToStart],
+    [destroyWorld, flingFromSpinnerPinch, resetMarbleToStart],
   );
 
   const resolveElimination = useCallback(
