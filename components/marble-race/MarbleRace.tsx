@@ -624,18 +624,18 @@ function makeReferenceStage8() {
   leftReset.plugin = {
     ...leftReset.plugin,
     wrapVertical: true,
-    wrapMinY: 445,
+    wrapMinY: 520,
     wrapMaxY: 700,
-    wrapSpeed: 2.9,
+    wrapSpeed: 2.15,
   };
 
   const rightReset = makeCircleZone("red-reset", 710, 690, 29);
   rightReset.plugin = {
     ...rightReset.plugin,
     wrapVertical: true,
-    wrapMinY: 445,
+    wrapMinY: 520,
     wrapMaxY: 700,
-    wrapSpeed: 2.9,
+    wrapSpeed: 2.15,
   };
 
   bodies.push(
@@ -705,13 +705,16 @@ function enableGentleZoneMotion(
 ) {
   const outcomeZones = bodies.filter(
     (body) =>
-      body.plugin?.obstacleKind === "green-finish" ||
-      body.plugin?.obstacleKind === "red-reset",
+      (body.plugin?.obstacleKind === "green-finish" ||
+        body.plugin?.obstacleKind === "red-reset") &&
+      !body.plugin?.floorZone &&
+      !body.plugin?.wrapVertical &&
+      body.position.y < FLOOR_Y - 165,
   );
 
   const processed = new Set<number>();
-  const baseAmplitude = 22 + (variant % 3) * 7;
-  const baseSpeed = 0.0011 + (variant % 4) * 0.00015;
+  const baseAmplitude = 14 + (variant % 3) * 5;
+  const baseSpeed = 0.0009 + (variant % 4) * 0.00012;
 
   for (const body of outcomeZones) {
     if (processed.has(body.id)) continue;
@@ -1394,6 +1397,83 @@ function makeSpinnerTunnel() {
   ];
 }
 
+function reduceRedAtChokePoints(bodies: ObstacleBody[]) {
+  const redZones = bodies.filter(
+    (body) => body.plugin?.obstacleKind === "red-reset",
+  );
+  const greenZones = bodies.filter(
+    (body) => body.plugin?.obstacleKind === "green-finish",
+  );
+
+  // Never let a red zone sit directly below the full-width spawn opening.
+  for (let index = bodies.length - 1; index >= 0; index -= 1) {
+    const body = bodies[index];
+    if (body.plugin?.obstacleKind !== "red-reset") continue;
+
+    const width = body.bounds.max.x - body.bounds.min.x;
+    const blocksCenter =
+      body.bounds.min.x < WIDTH / 2 + MARBLE_RADIUS * 1.8 &&
+      body.bounds.max.x > WIDTH / 2 - MARBLE_RADIUS * 1.8;
+
+    const nearUpperChoke =
+      body.position.y < START_Y + START_HEIGHT + 150;
+
+    if (blocksCenter && nearUpperChoke) {
+      bodies.splice(index, 1);
+    } else if (!body.plugin?.floorZone && width > 165) {
+      // Elevated red hazards should be targets, not entire hallways.
+      Body.scale(body, 0.72, 0.82);
+    }
+  }
+
+  // If the lower course contains more red width than green width, remove the
+  // most central red zones until green is at least equally reachable.
+  const floorRed = bodies
+    .filter(
+      (body) =>
+        body.plugin?.obstacleKind === "red-reset" &&
+        (body.plugin?.floorZone || body.position.y > FLOOR_Y - 150),
+    )
+    .sort(
+      (a, b) =>
+        Math.abs(a.position.x - WIDTH / 2) -
+        Math.abs(b.position.x - WIDTH / 2),
+    );
+
+  const floorGreen = bodies.filter(
+    (body) =>
+      body.plugin?.obstacleKind === "green-finish" &&
+      (body.plugin?.floorZone || body.position.y > FLOOR_Y - 150),
+  );
+
+  const totalWidth = (items: ObstacleBody[]) =>
+    items.reduce(
+      (sum, body) => sum + (body.bounds.max.x - body.bounds.min.x),
+      0,
+    );
+
+  let redWidth = totalWidth(floorRed);
+  const greenWidth = totalWidth(floorGreen);
+
+  for (const red of floorRed) {
+    if (redWidth <= greenWidth * 0.85 || floorRed.length <= 1) break;
+    const index = bodies.findIndex((body) => body.id === red.id);
+    if (index >= 0) {
+      redWidth -= red.bounds.max.x - red.bounds.min.x;
+      bodies.splice(index, 1);
+    }
+  }
+
+  // Guarantee at least one broad green floor destination.
+  const remainingGreen = bodies.filter(
+    (body) => body.plugin?.obstacleKind === "green-finish",
+  );
+
+  if (remainingGreen.length === 0) {
+    bodies.push(makeGreenFinish(WIDTH / 2, FLOOR_Y - 7, 230, 38));
+  }
+}
+
 function makeStageLayout(round: number) {
   const bodies: ObstacleBody[] = [];
 
@@ -1615,6 +1695,7 @@ function makeStageLayout(round: number) {
   expandCourseVertically(bodies);
   snapOutcomeZonesIntoFloor(bodies);
   addDeadEndOutcomeZones(bodies);
+  reduceRedAtChokePoints(bodies);
 
   // The hand-built reference stages already contain intentional motion.
   if (variant < 13) enableGentleZoneMotion(bodies, variant);
@@ -1656,9 +1737,17 @@ export default function MarbleRace({
     >
   >(new Map());
   const pinchEscapeRef = useRef<Map<number, number>>(new Map());
+  const redGraceUntilRef = useRef<Map<number, number>>(new Map());
+  const lastRedResetRef = useRef<Map<number, number>>(new Map());
   const roundTransitionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
+  const gateReleaseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
+  const rebuildFrameRef = useRef<number | null>(null);
+  const worldGenerationRef = useRef(0);
+  const destroyingWorldRef = useRef(false);
   const mountedRef = useRef(true);
   const countdownTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const speedRef = useRef<1 | 2 | 4>(1);
@@ -1684,57 +1773,131 @@ export default function MarbleRace({
   const placementNumber = remaining.length;
 
   const destroyWorld = useCallback(() => {
+    if (destroyingWorldRef.current) return;
+    destroyingWorldRef.current = true;
+    worldGenerationRef.current += 1;
+
     if (roundTransitionTimerRef.current) {
       clearTimeout(roundTransitionTimerRef.current);
       roundTransitionTimerRef.current = null;
     }
 
-    if (renderRef.current) {
-      Render.stop(renderRef.current);
-      renderRef.current.canvas.remove();
-      renderRef.current.textures = {};
+    if (gateReleaseTimerRef.current) {
+      clearTimeout(gateReleaseTimerRef.current);
+      gateReleaseTimerRef.current = null;
     }
-    if (runnerRef.current) Runner.stop(runnerRef.current);
-    if (engineRef.current) {
-      Events.off(engineRef.current);
-      World.clear(engineRef.current.world, false);
-      Engine.clear(engineRef.current);
+
+    if (rebuildFrameRef.current !== null) {
+      cancelAnimationFrame(rebuildFrameRef.current);
+      rebuildFrameRef.current = null;
+    }
+
+    if (countdownTimerRef.current) {
+      clearInterval(countdownTimerRef.current);
+      countdownTimerRef.current = null;
+    }
+
+    const engine = engineRef.current;
+    const runner = runnerRef.current;
+    const render = renderRef.current;
+
+    // Stop simulation callbacks before removing the canvas or clearing bodies.
+    if (runner) {
+      Runner.stop(runner);
+    }
+
+    if (engine) {
+      Events.off(engine);
+    }
+
+    if (render) {
+      Render.stop(render);
+    }
+
+    if (engine) {
+      World.clear(engine.world, false);
+      Engine.clear(engine);
+    }
+
+    if (render) {
+      render.textures = {};
+      const canvas = render.canvas;
+      if (canvas?.parentNode) {
+        canvas.parentNode.removeChild(canvas);
+      }
     }
 
     renderRef.current = null;
     runnerRef.current = null;
     engineRef.current = null;
-    marbleRefs.current.clear();
-    movementRef.current.clear();
     gateRef.current = null;
     hoverRef.current = null;
-    if (countdownTimerRef.current) {
-      clearInterval(countdownTimerRef.current);
-      countdownTimerRef.current = null;
-    }
+    marbleRefs.current.clear();
+    movementRef.current.clear();
+    pinchEscapeRef.current.clear();
+    redGraceUntilRef.current.clear();
+    lastRedResetRef.current.clear();
+
+    destroyingWorldRef.current = false;
   }, []);
 
   const resetMarbleToStart = useCallback((body: Matter.Body) => {
-    const marginX = MARBLE_RADIUS + 30;
-    const marginTop = MARBLE_RADIUS + 22;
-    const marginBottom = MARBLE_RADIUS + 28;
+    const marginX = MARBLE_RADIUS + 38;
+    const marginTop = MARBLE_RADIUS + 26;
+    const marginBottom = MARBLE_RADIUS + 34;
+    const activeBodies = [...marbleRefs.current.values()]
+      .map((meta) => meta.body)
+      .filter((candidate) => candidate.id !== body.id);
 
-    const x =
-      START_X +
-      marginX +
-      Math.random() * (START_WIDTH - marginX * 2);
-    const y =
-      START_Y +
-      marginTop +
-      Math.random() *
-        (START_HEIGHT - marginTop - marginBottom);
+    let chosen = {
+      x: WIDTH / 2,
+      y: START_Y + MARBLE_RADIUS + 34,
+    };
+    let bestClearance = -1;
 
-    Body.setPosition(body, { x, y });
+    // Sample several positions and choose the one furthest from the other
+    // marbles. This avoids a respawn stack forming directly over one hazard.
+    for (let attempt = 0; attempt < 24; attempt += 1) {
+      const candidate = {
+        x:
+          START_X +
+          marginX +
+          Math.random() * Math.max(1, START_WIDTH - marginX * 2),
+        y:
+          START_Y +
+          marginTop +
+          Math.random() *
+            Math.max(1, START_HEIGHT - marginTop - marginBottom),
+      };
+
+      const clearance =
+        activeBodies.length === 0
+          ? 999
+          : Math.min(
+              ...activeBodies.map((other) =>
+                Math.hypot(
+                  candidate.x - other.position.x,
+                  candidate.y - other.position.y,
+                ),
+              ),
+            );
+
+      if (clearance > bestClearance) {
+        bestClearance = clearance;
+        chosen = candidate;
+      }
+    }
+
+    Body.setPosition(body, chosen);
     Body.setVelocity(body, {
-      x: (Math.random() - 0.5) * 5,
-      y: (Math.random() - 0.5) * 3,
+      x: (Math.random() - 0.5) * 3.5,
+      y: (Math.random() - 0.5) * 1.8,
     });
-    Body.setAngularVelocity(body, (Math.random() - 0.5) * 0.35);
+    Body.setAngularVelocity(body, (Math.random() - 0.5) * 0.28);
+
+    const now = Date.now();
+    redGraceUntilRef.current.set(body.id, now + 1700);
+    lastRedResetRef.current.set(body.id, now);
   }, []);
 
   const flingFromSpinnerPinch = useCallback(
@@ -1797,7 +1960,12 @@ export default function MarbleRace({
   const buildRound = useCallback(
     (roundContestants: MarbleContestant[], roundNumber: number) => {
       if (!sceneRef.current || roundContestants.length < 1) return;
+
       destroyWorld();
+      if (!mountedRef.current || !sceneRef.current) return;
+
+      worldGenerationRef.current += 1;
+      const generation = worldGenerationRef.current;
 
       qualifiersRef.current.clear();
       roundStartedRef.current = false;
@@ -1902,6 +2070,14 @@ export default function MarbleRace({
       Composite.add(engine.world, mouseConstraint);
 
       Events.on(engine, "beforeUpdate", () => {
+        if (
+          !mountedRef.current ||
+          engineRef.current !== engine ||
+          worldGenerationRef.current !== generation
+        ) {
+          return;
+        }
+
         for (const body of Composite.allBodies(
           engine.world,
         ) as ObstacleBody[]) {
@@ -2028,6 +2204,20 @@ export default function MarbleRace({
 
           for (const meta of marbleRefs.current.values()) {
             if (qualifiersRef.current.has(meta.contestant.id)) continue;
+
+            const redGraceUntil =
+              redGraceUntilRef.current.get(meta.body.id) ?? 0;
+            if (now < redGraceUntil) {
+              const tracking = movementRef.current.get(meta.body.id);
+              if (tracking) {
+                tracking.x = meta.body.position.x;
+                tracking.y = meta.body.position.y;
+                tracking.lowestY = meta.body.position.y;
+                tracking.lastMovedAt = now;
+                tracking.lastProgressAt = now;
+              }
+              continue;
+            }
 
             const tracking = movementRef.current.get(meta.body.id);
             if (!tracking) continue;
@@ -2178,6 +2368,14 @@ export default function MarbleRace({
       });
 
       Events.on(engine, "collisionStart", (event) => {
+        if (
+          !mountedRef.current ||
+          engineRef.current !== engine ||
+          worldGenerationRef.current !== generation
+        ) {
+          return;
+        }
+
         for (const pair of event.pairs) {
           const bodies = [
             pair.bodyA as ObstacleBody,
@@ -2197,10 +2395,22 @@ export default function MarbleRace({
           if (!meta || qualifiersRef.current.has(meta.contestant.id)) continue;
 
           if (sensorBody.plugin.obstacleKind === "red-reset") {
-            const activeIndex = [...marbleRefs.current.values()].findIndex(
-              (entry) => entry.body.id === marbleBody.id,
-            );
-            resetMarbleToStart(marbleBody);
+            const now = Date.now();
+            const graceUntil = redGraceUntilRef.current.get(marbleBody.id) ?? 0;
+            const lastReset = lastRedResetRef.current.get(marbleBody.id) ?? 0;
+            const safelyBelowSpawn =
+              marbleBody.position.y >
+              START_Y + START_HEIGHT + MARBLE_RADIUS * 1.25;
+
+            if (
+              now >= graceUntil &&
+              now - lastReset >= 900 &&
+              safelyBelowSpawn
+            ) {
+              resetMarbleToStart(marbleBody);
+            }
+
+            continue;
           }
 
           if (sensorBody.plugin.obstacleKind === "green-finish") {
@@ -2227,6 +2437,15 @@ export default function MarbleRace({
       });
 
       Events.on(render, "afterRender", () => {
+        if (
+          !mountedRef.current ||
+          renderRef.current !== render ||
+          engineRef.current !== engine ||
+          worldGenerationRef.current !== generation
+        ) {
+          return;
+        }
+
         const ctx = render.context;
         const bounds = render.bounds;
         const mousePosition = mouse.position;
@@ -2469,20 +2688,42 @@ export default function MarbleRace({
         eliminationDisplayRef.current = null;
         setEliminationDisplay(null);
         setRound(nextRound);
-        buildRound(nextRemaining, nextRound);
+
+        // Fully stop and dispose the old Matter world first. The new world is
+        // created on a later animation frame so no old runner/render callback
+        // can touch the replacement canvas.
+        destroyWorld();
+
+        rebuildFrameRef.current = requestAnimationFrame(() => {
+          rebuildFrameRef.current = requestAnimationFrame(() => {
+            rebuildFrameRef.current = null;
+
+            if (!mountedRef.current || !sceneRef.current) return;
+            buildRound(nextRemaining, nextRound);
+          });
+        });
       }, 3600);
     },
-    [buildRound, onSeasonFinished, round],
+    [buildRound, destroyWorld, onSeasonFinished, round],
   );
 
   // Keep callback reachable inside Matter collision event without stale state.
   const resolveEliminationRef = useRef(resolveElimination);
+  const startRoundRef = useRef<() => void>(() => {});
   useEffect(() => {
     resolveEliminationRef.current = resolveElimination;
   }, [resolveElimination]);
 
   useEffect(() => {
     mountedRef.current = true;
+
+    return () => {
+      mountedRef.current = false;
+      destroyWorld();
+    };
+  }, [destroyWorld]);
+
+  useEffect(() => {
     remainingRef.current = contestants;
     eliminatedRef.current = [];
     setRemaining(contestants);
@@ -2490,15 +2731,10 @@ export default function MarbleRace({
     setRound(1);
     setWinner(null);
 
-    if (contestants.length > 0) {
+    if (contestants.length > 0 && mountedRef.current) {
       buildRound(contestants, 1);
     }
-
-    return () => {
-      mountedRef.current = false;
-      destroyWorld();
-    };
-  }, [contestants, buildRound, destroyWorld]);
+  }, [contestants, buildRound]);
 
   const releaseGate = () => {
     if (!engineRef.current || winner) return;
@@ -2542,9 +2778,20 @@ export default function MarbleRace({
       }
 
       setCountdown(0);
-      setTimeout(releaseGate, 350);
+
+      if (gateReleaseTimerRef.current) {
+        clearTimeout(gateReleaseTimerRef.current);
+      }
+
+      gateReleaseTimerRef.current = setTimeout(() => {
+        gateReleaseTimerRef.current = null;
+        if (!mountedRef.current) return;
+        releaseGate();
+      }, 350);
     }, 700);
   };
+
+  startRoundRef.current = startRound;
 
   const togglePause = () => {
     if (!runnerRef.current || !engineRef.current || winner) return;
@@ -2777,16 +3024,26 @@ export default function MarbleRace({
 
               
   useEffect(() => {
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.code !== "Space") return;
-      const tag = (e.target as HTMLElement | null)?.tagName;
-      if (tag === "INPUT" || tag === "TEXTAREA") return;
-      e.preventDefault();
-      if (!started && !winner) startRound();
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.code !== "Space") return;
+
+      const target = event.target as HTMLElement | null;
+      const tagName = target?.tagName;
+      if (
+        tagName === "INPUT" ||
+        tagName === "TEXTAREA" ||
+        target?.isContentEditable
+      ) {
+        return;
+      }
+
+      event.preventDefault();
+      startRoundRef.current();
     };
+
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [started, winner]);
+  }, []);
 
 return (
                 <div
