@@ -881,61 +881,129 @@ function removeUnsafeCornerGuards(bodies: ObstacleBody[]) {
 }
 
 function ensureCentralDropClearance(bodies: ObstacleBody[]) {
-  const requiredGap = MARBLE_RADIUS * 2 + 22;
+  const chuteHalfWidth = MARBLE_RADIUS + 20;
+  const chuteMinX = WIDTH / 2 - chuteHalfWidth;
+  const chuteMaxX = WIDTH / 2 + chuteHalfWidth;
+  const chuteTop = START_Y + START_HEIGHT + 26;
+  const chuteBottom = FLOOR_Y - 44;
+
+  const protectedBodies = new Set<number>();
+
+  for (const body of bodies) {
+    if (
+      body.isSensor ||
+      body.label === "start-gate" ||
+      body.plugin?.obstacleKind === "corner-guard"
+    ) {
+      continue;
+    }
+
+    const bodyWidth = body.bounds.max.x - body.bounds.min.x;
+    const bodyHeight = body.bounds.max.y - body.bounds.min.y;
+
+    const intersectsCenterChute =
+      body.bounds.max.x > chuteMinX &&
+      body.bounds.min.x < chuteMaxX &&
+      body.bounds.max.y > chuteTop &&
+      body.bounds.min.y < chuteBottom;
+
+    const isSpinner =
+      body.plugin?.rotateSpeed !== undefined &&
+      Math.abs(body.plugin.rotateSpeed) > 0;
+
+    const isSmallCenterObject =
+      bodyWidth <= MARBLE_RADIUS * 2.4 &&
+      bodyHeight <= MARBLE_RADIUS * 2.4;
+
+    // Keep center spinners and small bumpers because they can move marbles
+    // through. Remove static rails, walls, and large shapes that seal the chute.
+    if (intersectsCenterChute && !isSpinner && !isSmallCenterObject) {
+      protectedBodies.add(body.id);
+    }
+  }
+
+  for (let index = bodies.length - 1; index >= 0; index -= 1) {
+    if (protectedBodies.has(bodies[index].id)) {
+      bodies.splice(index, 1);
+    }
+  }
+
+  // Also remove pairs whose combined bounds form a bridge across the center.
   const solids = bodies.filter(
     (body) =>
-      body.isStatic &&
       !body.isSensor &&
       body.label !== "start-gate" &&
-      body.plugin?.obstacleKind !== "corner-guard",
+      body.plugin?.obstacleKind !== "corner-guard" &&
+      body.plugin?.rotateSpeed === undefined,
   );
 
-  // If two long rails cross or nearly meet in the same vertical band,
-  // move them apart slightly so at least one marble-width route remains.
+  const toRemove = new Set<number>();
+
   for (let i = 0; i < solids.length; i += 1) {
     for (let j = i + 1; j < solids.length; j += 1) {
       const a = solids[i];
       const b = solids[j];
 
-      const aWidth = a.bounds.max.x - a.bounds.min.x;
-      const aHeight = a.bounds.max.y - a.bounds.min.y;
-      const bWidth = b.bounds.max.x - b.bounds.min.x;
-      const bHeight = b.bounds.max.y - b.bounds.min.y;
+      const sameBand =
+        Math.abs(a.position.y - b.position.y) < MARBLE_RADIUS * 2.5;
 
-      const aLong = Math.max(aWidth, aHeight) > 190;
-      const bLong = Math.max(bWidth, bHeight) > 190;
-      if (!aLong || !bLong) continue;
+      if (!sameBand) continue;
 
-      const horizontalOverlap =
-        Math.min(a.bounds.max.x, b.bounds.max.x) -
-        Math.max(a.bounds.min.x, b.bounds.min.x);
-      const verticalOverlap =
-        Math.min(a.bounds.max.y, b.bounds.max.y) -
-        Math.max(a.bounds.min.y, b.bounds.min.y);
+      const combinedMinX = Math.min(a.bounds.min.x, b.bounds.min.x);
+      const combinedMaxX = Math.max(a.bounds.max.x, b.bounds.max.x);
+      const overlapAcrossCenter =
+        combinedMinX < chuteMinX &&
+        combinedMaxX > chuteMaxX &&
+        Math.min(a.bounds.max.x, b.bounds.max.x) >
+          Math.max(a.bounds.min.x, b.bounds.min.x);
 
-      const centerDistance = Math.hypot(
-        a.position.x - b.position.x,
-        a.position.y - b.position.y,
-      );
+      if (!overlapAcrossCenter) continue;
 
-      if (
-        horizontalOverlap > 0 &&
-        verticalOverlap > 0 &&
-        centerDistance < 420
-      ) {
-        const direction = a.position.x <= b.position.x ? -1 : 1;
+      const removeA =
+        Math.abs(a.position.x - WIDTH / 2) <
+        Math.abs(b.position.x - WIDTH / 2);
 
-        Body.translate(a, {
-          x: direction * requiredGap * 0.55,
-          y: -requiredGap * 0.18,
-        });
-        Body.translate(b, {
-          x: -direction * requiredGap * 0.55,
-          y: requiredGap * 0.18,
-        });
-      }
+      toRemove.add(removeA ? a.id : b.id);
     }
   }
+
+  for (let index = bodies.length - 1; index >= 0; index -= 1) {
+    if (toRemove.has(bodies[index].id)) {
+      bodies.splice(index, 1);
+    }
+  }
+
+  // Add subtle mirrored guide rails outside the protected center chute.
+  const guideY = FLOOR_Y - 120;
+  const guideLength = 250;
+  const guideColor = {
+    fillStyle: "#cbd5e1",
+    strokeStyle: "#475569",
+    lineWidth: 2,
+  };
+
+  const leftGuide = makeWall(WIDTH / 2 - 205, guideY, guideLength, 18, {
+    angle: 0.12,
+    render: guideColor,
+  });
+  const rightGuide = makeWall(WIDTH / 2 + 205, guideY, guideLength, 18, {
+    angle: -0.12,
+    render: guideColor,
+  });
+
+  // Only add the guides when they do not overlap existing outcome zones.
+  const safeToAdd = (candidate: Matter.Body) =>
+    !bodies.some(
+      (body) =>
+        body.isSensor &&
+        candidate.bounds.max.x > body.bounds.min.x &&
+        candidate.bounds.min.x < body.bounds.max.x &&
+        candidate.bounds.max.y > body.bounds.min.y - 18 &&
+        candidate.bounds.min.y < body.bounds.max.y + 18,
+    );
+
+  if (safeToAdd(leftGuide)) bodies.push(leftGuide);
+  if (safeToAdd(rightGuide)) bodies.push(rightGuide);
 }
 
 function synchronizeMirroredMotion(bodies: ObstacleBody[]) {
@@ -1687,6 +1755,35 @@ export default function MarbleRace({
               resetMarbleToStart(meta.body, Math.max(activeIndex, 0));
               tracking.lastMovedAt = now;
             }
+          }
+        }
+
+        if (
+          roundStartedRef.current &&
+          !roundResolvingRef.current &&
+          engine.timing.timestamp > 18000
+        ) {
+          const activeMarbles = [...marbleRefs.current.values()].filter(
+            (meta) => !qualifiersRef.current.has(meta.contestant.id),
+          );
+
+          const nobodyReachedLowerCourse = activeMarbles.every(
+            (meta) => meta.body.position.y < HEIGHT * 0.62,
+          );
+
+          if (activeMarbles.length > 0 && nobodyReachedLowerCourse) {
+            const lowest = [...activeMarbles].sort(
+              (a, b) => b.body.position.y - a.body.position.y,
+            )[0];
+
+            Body.setPosition(lowest.body, {
+              x: WIDTH / 2 + (Math.random() - 0.5) * 24,
+              y: HEIGHT * 0.64,
+            });
+            Body.setVelocity(lowest.body, {
+              x: (Math.random() - 0.5) * 3,
+              y: 5,
+            });
           }
         }
 
