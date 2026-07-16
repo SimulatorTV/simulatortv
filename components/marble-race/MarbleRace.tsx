@@ -319,9 +319,10 @@ function snapOutcomeZonesIntoFloor(bodies: ObstacleBody[]) {
     // the course remain normal shapes.
     if (body.position.y < FLOOR_Y - 135 || body.plugin?.wrapVertical) continue;
 
+    const originalWidth = body.bounds.max.x - body.bounds.min.x;
     const zoneWidth = Math.max(
-      88,
-      Math.min(WIDTH - 72, body.bounds.max.x - body.bounds.min.x),
+      130,
+      Math.min(WIDTH - 72, originalWidth * 1.28),
     );
 
     const replacement = Bodies.rectangle(
@@ -352,6 +353,117 @@ function snapOutcomeZonesIntoFloor(bodies: ObstacleBody[]) {
 
     const index = bodies.indexOf(body);
     if (index >= 0) bodies[index] = replacement;
+  }
+}
+
+function addDeadEndOutcomeZones(bodies: ObstacleBody[]) {
+  const floorZones = bodies
+    .filter(
+      (body) =>
+        body.isSensor &&
+        body.plugin?.floorZone &&
+        (body.plugin?.obstacleKind === "green-finish" ||
+          body.plugin?.obstacleKind === "red-reset"),
+    )
+    .sort((a, b) => a.bounds.min.x - b.bounds.min.x);
+
+  const occupied: Array<{ min: number; max: number }> = floorZones.map((body) => ({
+    min: Math.max(36, body.bounds.min.x),
+    max: Math.min(WIDTH - 36, body.bounds.max.x),
+  }));
+
+  const merged: Array<{ min: number; max: number }> = [];
+  for (const interval of occupied) {
+    const previous = merged[merged.length - 1];
+    if (!previous || interval.min > previous.max + 18) {
+      merged.push({ ...interval });
+    } else {
+      previous.max = Math.max(previous.max, interval.max);
+    }
+  }
+
+  const lowSolids = bodies.filter(
+    (body) =>
+      !body.isSensor &&
+      body.label !== "start-gate" &&
+      body.position.y > FLOOR_Y - 235 &&
+      body.position.y < FLOOR_Y - 35,
+  );
+
+  const addRedFloor = (centerX: number, width: number) => {
+    const safeWidth = Math.max(130, Math.min(width, 230));
+    const zone = Bodies.rectangle(centerX, FLOOR_Y - 7, safeWidth, 34, {
+      isStatic: true,
+      isSensor: true,
+      collisionFilter: {
+        category: CATEGORY_SENSOR,
+        mask: CATEGORY_MARBLE,
+      },
+      render: {
+        fillStyle: "#ef4444",
+        strokeStyle: "#7f1d1d",
+        lineWidth: 2,
+      },
+    }) as ObstacleBody;
+
+    zone.plugin = {
+      obstacleKind: "red-reset",
+      floorZone: true,
+    };
+
+    bodies.push(zone);
+    merged.push({
+      min: centerX - safeWidth / 2,
+      max: centerX + safeWidth / 2,
+    });
+  };
+
+  // Any broad uncovered floor directly below a low obstacle cluster is treated
+  // as a dead-end landing pocket and receives a red reset floor.
+  const gaps: Array<{ min: number; max: number }> = [];
+  let cursor = 36;
+
+  for (const interval of merged.sort((a, b) => a.min - b.min)) {
+    if (interval.min - cursor >= 150) {
+      gaps.push({ min: cursor, max: interval.min });
+    }
+    cursor = Math.max(cursor, interval.max);
+  }
+
+  if (WIDTH - 36 - cursor >= 150) {
+    gaps.push({ min: cursor, max: WIDTH - 36 });
+  }
+
+  for (const gap of gaps) {
+    const centerX = (gap.min + gap.max) / 2;
+    const gapWidth = gap.max - gap.min;
+
+    const hasLowObstacleAbove = lowSolids.some(
+      (body) =>
+        body.bounds.max.x > gap.min - MARBLE_RADIUS &&
+        body.bounds.min.x < gap.max + MARBLE_RADIUS,
+    );
+
+    if (!hasLowObstacleAbove) continue;
+
+    const mirroredCenter = WIDTH - centerX;
+    const zoneWidth = Math.min(gapWidth - 34, 210);
+
+    addRedFloor(centerX, zoneWidth);
+
+    if (Math.abs(mirroredCenter - centerX) > 70) {
+      const mirroredAlreadyCovered = bodies.some(
+        (body) =>
+          body.isSensor &&
+          body.plugin?.floorZone &&
+          body.bounds.min.x <= mirroredCenter &&
+          body.bounds.max.x >= mirroredCenter,
+      );
+
+      if (!mirroredAlreadyCovered) {
+        addRedFloor(mirroredCenter, zoneWidth);
+      }
+    }
   }
 }
 
@@ -1447,6 +1559,7 @@ function makeStageLayout(round: number) {
   // Do not blanket-cover the bottom with sensors. Routes stay open and visible.
   expandCourseVertically(bodies);
   snapOutcomeZonesIntoFloor(bodies);
+  addDeadEndOutcomeZones(bodies);
 
   // The hand-built reference stages already contain intentional motion.
   if (variant < 13) enableGentleZoneMotion(bodies, variant);
@@ -1481,6 +1594,8 @@ export default function MarbleRace({
         x: number;
         y: number;
         lastMovedAt: number;
+        lastProgressAt: number;
+        lowestY: number;
         stuckCount: number;
       }
     >
@@ -1652,6 +1767,8 @@ export default function MarbleRace({
             x: meta.body.position.x,
             y: meta.body.position.y,
             lastMovedAt: Date.now(),
+            lastProgressAt: Date.now(),
+            lowestY: meta.body.position.y,
             stuckCount: 0,
           },
         ]),
@@ -1726,12 +1843,27 @@ export default function MarbleRace({
             const dy = meta.body.position.y - tracking.y;
             const moved = Math.hypot(dx, dy);
 
+            const madeDownwardProgress =
+              meta.body.position.y > tracking.lowestY + MARBLE_RADIUS * 0.75;
+
+            if (madeDownwardProgress) {
+              tracking.lowestY = meta.body.position.y;
+              tracking.lastProgressAt = now;
+            }
+
             if (moved > 26 || meta.body.speed > 1.8) {
               tracking.x = meta.body.position.x;
               tracking.y = meta.body.position.y;
               tracking.lastMovedAt = now;
               tracking.stuckCount = 0;
-            } else if (now - tracking.lastMovedAt > 1900) {
+            }
+
+            const physicallyStuck = now - tracking.lastMovedAt > 1500;
+            const repeatingLoop =
+              now - tracking.lastProgressAt > 5200 &&
+              meta.body.position.y < FLOOR_Y - 80;
+
+            if (physicallyStuck || repeatingLoop) {
               const activeIndex = [...marbleRefs.current.values()].findIndex(
                 (entry) => entry.body.id === meta.body.id,
               );
@@ -1740,7 +1872,9 @@ export default function MarbleRace({
 
               tracking.x = meta.body.position.x;
               tracking.y = meta.body.position.y;
+              tracking.lowestY = meta.body.position.y;
               tracking.lastMovedAt = now;
+              tracking.lastProgressAt = now;
               tracking.stuckCount = 0;
             }
 
@@ -2024,6 +2158,16 @@ export default function MarbleRace({
         (entry) => entry.contestant.id === loser.id,
       );
 
+      const preservedPosition = loserMeta
+        ? { ...loserMeta.body.position }
+        : { x: WIDTH / 2, y: START_Y + START_HEIGHT + 20 };
+      const preservedVelocity = loserMeta
+        ? { ...loserMeta.body.velocity }
+        : { x: 0, y: 1 };
+      const preservedAngularVelocity = loserMeta
+        ? loserMeta.body.angularVelocity
+        : 0;
+
       // Everything disappears immediately except the final marble.
       for (const body of [
         ...Composite.allBodies(engine.world),
@@ -2085,15 +2229,12 @@ export default function MarbleRace({
 
       if (loserMeta) {
         Body.setStatic(loserMeta.body, false);
-        Body.setPosition(loserMeta.body, {
-          x: WIDTH / 2,
-          y: 105,
-        });
-        Body.setVelocity(loserMeta.body, {
-          x: (Math.random() < 0.5 ? -1 : 1) * (4 + Math.random() * 2.5),
-          y: 1.5,
-        });
-        Body.setAngularVelocity(loserMeta.body, (Math.random() - 0.5) * 0.45);
+        Body.setPosition(loserMeta.body, preservedPosition);
+        Body.setVelocity(loserMeta.body, preservedVelocity);
+        Body.setAngularVelocity(
+          loserMeta.body,
+          preservedAngularVelocity,
+        );
       }
 
       setTimeout(() => {
@@ -2166,7 +2307,8 @@ export default function MarbleRace({
   };
 
   const startRound = () => {
-    if (!engineRef.current || started || winner || countdown !== null) return;
+    if (!engineRef.current || started || winner) return;
+    if (countdownTimerRef.current) return;
 
     let value = 3;
     setCountdown(value);
@@ -2247,7 +2389,7 @@ export default function MarbleRace({
             <button
               className={styles.startButton}
               style={startButtonStyle}
-              onClick={startRound}
+              onPointerDown={startRound}
             >
               Start Round
             </button>
@@ -2418,7 +2560,20 @@ export default function MarbleRace({
             {eliminated.map((contestant, index) => {
               const place = contestants.length - index;
 
-              return (
+              
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.code !== "Space") return;
+      const tag = (e.target as HTMLElement | null)?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA") return;
+      e.preventDefault();
+      if (!started && !winner) startRound();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [started, winner]);
+
+return (
                 <div
                   key={contestant.id}
                   style={{
