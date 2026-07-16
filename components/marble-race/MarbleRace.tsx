@@ -49,6 +49,7 @@ type ObstacleBody = Matter.Body & {
     wrapMinY?: number;
     wrapMaxY?: number;
     wrapSpeed?: number;
+    floorZone?: boolean;
   };
 };
 
@@ -277,6 +278,51 @@ function makeCircleZone(
 
   body.plugin = { obstacleKind: kind };
   return body;
+}
+
+function snapOutcomeZonesIntoFloor(bodies: ObstacleBody[]) {
+  for (const body of bodies) {
+    const kind = body.plugin?.obstacleKind;
+    if (kind !== "green-finish" && kind !== "red-reset") continue;
+
+    // Only convert zones intended as bottom exits. Moving hazards higher in
+    // the course remain normal shapes.
+    if (body.position.y < FLOOR_Y - 135 || body.plugin?.wrapVertical) continue;
+
+    const zoneWidth = Math.max(
+      88,
+      Math.min(WIDTH - 72, body.bounds.max.x - body.bounds.min.x),
+    );
+
+    const replacement = Bodies.rectangle(
+      body.position.x,
+      FLOOR_Y - 7,
+      zoneWidth,
+      34,
+      {
+        isStatic: true,
+        isSensor: true,
+        angle: 0,
+        collisionFilter: {
+          category: CATEGORY_SENSOR,
+          mask: CATEGORY_MARBLE,
+        },
+        render: {
+          fillStyle: kind === "green-finish" ? "#22c55e" : "#ef4444",
+          strokeStyle: kind === "green-finish" ? "#14532d" : "#7f1d1d",
+          lineWidth: 2,
+        },
+      },
+    ) as ObstacleBody;
+
+    replacement.plugin = {
+      obstacleKind: kind,
+      floorZone: true,
+    };
+
+    const index = bodies.indexOf(body);
+    if (index >= 0) bodies[index] = replacement;
+  }
 }
 
 function expandCourseVertically(bodies: ObstacleBody[]) {
@@ -1192,6 +1238,7 @@ function makeStageLayout(round: number) {
 
   // Do not blanket-cover the bottom with sensors. Routes stay open and visible.
   expandCourseVertically(bodies);
+  snapOutcomeZonesIntoFloor(bodies);
 
   // The hand-built reference stages already contain intentional motion.
   if (variant < 13) enableGentleZoneMotion(bodies, variant);
@@ -1231,6 +1278,9 @@ export default function MarbleRace({
   >(new Map());
   const countdownTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const speedRef = useRef<1 | 2 | 4>(1);
+  const eliminationDisplayRef = useRef<{ name: string; place: number } | null>(
+    null,
+  );
 
   const [remaining, setRemaining] = useState<MarbleContestant[]>(contestants);
   const [eliminated, setEliminated] = useState<MarbleContestant[]>([]);
@@ -1307,6 +1357,7 @@ export default function MarbleRace({
       setPaused(false);
       setQualifiedCount(0);
       setAnnouncement(null);
+      eliminationDisplayRef.current = null;
       setEliminationDisplay(null);
 
       const engine = Engine.create({
@@ -1590,11 +1641,9 @@ export default function MarbleRace({
               const loser = [...marbleRefs.current.values()].find(
                 (entry) => !qualifiersRef.current.has(entry.contestant.id),
               );
+
               if (loser) {
-                setTimeout(
-                  () => resolveEliminationRef.current(loser.contestant),
-                  700,
-                );
+                resolveEliminationRef.current(loser.contestant);
               }
             }
           }
@@ -1670,7 +1719,27 @@ export default function MarbleRace({
           ctx.restore();
         }
 
-        if (hovered) {
+        const eliminationInfo = eliminationDisplayRef.current;
+        if (eliminationInfo) {
+          ctx.save();
+          ctx.fillStyle = "#000000";
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
+
+          const safeDisplayName = safeName(eliminationInfo.name);
+          ctx.font = "1000 64px system-ui, sans-serif";
+          ctx.fillText(safeDisplayName, WIDTH / 2, HEIGHT * 0.46);
+
+          ctx.font = "900 34px system-ui, sans-serif";
+          ctx.fillText(
+            `ELIMINATED · ${ordinal(eliminationInfo.place)} PLACE`,
+            WIDTH / 2,
+            HEIGHT * 0.54,
+          );
+          ctx.restore();
+        }
+
+        if (hovered && !eliminationDisplayRef.current) {
           const label = safeName(hovered.contestant.name);
           ctx.save();
           ctx.font = "700 16px system-ui, sans-serif";
@@ -1703,16 +1772,21 @@ export default function MarbleRace({
   const resolveElimination = useCallback(
     (loser: MarbleContestant) => {
       const engine = engineRef.current;
-      if (!engine) return;
+      if (!engine || !roundResolvingRef.current) return;
 
-      // Clear the course and every qualified marble so the eliminated marble
-      // bounces alone on a clean white screen.
-      for (const meta of marbleRefs.current.values()) {
-        if (meta.contestant.id !== loser.id) {
-          qualifiersRef.current.add(meta.contestant.id);
-        }
-      }
+      const place = remainingRef.current.length;
+      const display = { name: loser.name, place };
 
+      eliminationDisplayRef.current = display;
+      setEliminationDisplay(display);
+      setAnnouncement(null);
+      setPaused(false);
+
+      const loserMeta = [...marbleRefs.current.values()].find(
+        (entry) => entry.contestant.id === loser.id,
+      );
+
+      // Everything disappears immediately except the final marble.
       for (const body of [
         ...Composite.allBodies(engine.world),
       ] as ObstacleBody[]) {
@@ -1720,48 +1794,76 @@ export default function MarbleRace({
         if (!isLoser) Composite.remove(engine.world, body);
       }
 
-      // Invisible boundaries create a blank-screen bounce chamber.
-      const invisibleBoundaryOptions: Matter.IChamferableBodyDefinition = {
+      qualifiersRef.current.clear();
+      for (const meta of marbleRefs.current.values()) {
+        if (meta.contestant.id !== loser.id) {
+          qualifiersRef.current.add(meta.contestant.id);
+        }
+      }
+
+      // Blank white bounce chamber with an actual visible floor.
+      const wallOptions: Matter.IChamferableBodyDefinition = {
         isStatic: true,
         friction: 0,
-        restitution: 1.02,
+        restitution: 0.92,
         collisionFilter: { category: CATEGORY_STAGE },
-        render: { visible: false },
+        render: {
+          fillStyle: "#ffffff",
+          strokeStyle: "#ffffff",
+          lineWidth: 0,
+        },
       };
 
-      Composite.add(engine.world, [
-        Bodies.rectangle(WIDTH / 2, HEIGHT - 18, WIDTH, 36, invisibleBoundaryOptions),
-        Bodies.rectangle(18, HEIGHT / 2, 36, HEIGHT, invisibleBoundaryOptions),
-        Bodies.rectangle(WIDTH - 18, HEIGHT / 2, 36, HEIGHT, invisibleBoundaryOptions),
-        Bodies.rectangle(WIDTH / 2, 18, WIDTH, 36, invisibleBoundaryOptions),
-      ]);
-
-      const loserMeta = [...marbleRefs.current.values()].find(
-        (entry) => entry.contestant.id === loser.id,
+      const visibleFloor = Bodies.rectangle(
+        WIDTH / 2,
+        HEIGHT - 18,
+        WIDTH,
+        36,
+        {
+          ...wallOptions,
+          render: {
+            fillStyle: "#111827",
+            strokeStyle: "#111827",
+            lineWidth: 0,
+          },
+        },
       );
+
+      Composite.add(engine.world, [
+        visibleFloor,
+        Bodies.rectangle(18, HEIGHT / 2, 36, HEIGHT, {
+          ...wallOptions,
+          render: { visible: false },
+        }),
+        Bodies.rectangle(WIDTH - 18, HEIGHT / 2, 36, HEIGHT, {
+          ...wallOptions,
+          render: { visible: false },
+        }),
+        Bodies.rectangle(WIDTH / 2, 18, WIDTH, 36, {
+          ...wallOptions,
+          render: { visible: false },
+        }),
+      ]);
 
       if (loserMeta) {
         Body.setStatic(loserMeta.body, false);
         Body.setPosition(loserMeta.body, {
           x: WIDTH / 2,
-          y: HEIGHT * 0.48,
+          y: 105,
         });
         Body.setVelocity(loserMeta.body, {
-          x: (Math.random() < 0.5 ? -1 : 1) * (5 + Math.random() * 3),
-          y: -7 - Math.random() * 3,
+          x: (Math.random() < 0.5 ? -1 : 1) * (4 + Math.random() * 2.5),
+          y: 1.5,
         });
-        Body.setAngularVelocity(loserMeta.body, (Math.random() - 0.5) * 0.5);
+        Body.setAngularVelocity(loserMeta.body, (Math.random() - 0.5) * 0.45);
       }
-
-      const place = remainingRef.current.length;
-      setAnnouncement(null);
-      setEliminationDisplay({ name: loser.name, place });
 
       setTimeout(() => {
         const nextRemaining = remainingRef.current.filter(
           (contestant) => contestant.id !== loser.id,
         );
         const nextEliminated = [loser, ...eliminatedRef.current];
+
         eliminatedRef.current = nextEliminated;
         remainingRef.current = nextRemaining;
         setEliminated(nextEliminated);
@@ -1769,6 +1871,7 @@ export default function MarbleRace({
 
         if (nextRemaining.length === 1) {
           const seasonWinner = nextRemaining[0];
+          eliminationDisplayRef.current = null;
           setEliminationDisplay(null);
           setWinner(seasonWinner);
           setAnnouncement(`${seasonWinner.name} wins the Marble Race!`);
@@ -1777,9 +1880,11 @@ export default function MarbleRace({
         }
 
         const nextRound = round + 1;
+        eliminationDisplayRef.current = null;
+        setEliminationDisplay(null);
         setRound(nextRound);
         buildRound(nextRemaining, nextRound);
-      }, 3200);
+      }, 3600);
     },
     [buildRound, onSeasonFinished, round],
   );
@@ -1874,6 +1979,7 @@ export default function MarbleRace({
     setRound(1);
     setWinner(null);
     setAnnouncement(null);
+    eliminationDisplayRef.current = null;
     setEliminationDisplay(null);
     buildRound(contestants, 1);
   };
