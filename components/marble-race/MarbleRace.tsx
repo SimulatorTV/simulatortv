@@ -8,7 +8,6 @@ import Matter, {
   Engine,
   Events,
   Mouse,
-  MouseConstraint,
   Render,
   Runner,
   World,
@@ -1723,6 +1722,7 @@ export default function MarbleRace({
   const gateRef = useRef<Matter.Body | null>(null);
   const hoverRef = useRef<MarbleMeta | null>(null);
   const imageCacheRef = useRef<Map<string, HTMLImageElement>>(new Map());
+  const spawnPositionRef = useRef<Map<string, { x: number; y: number }>>(new Map());
   const movementRef = useRef<
     Map<
       number,
@@ -1769,8 +1769,6 @@ export default function MarbleRace({
   const [winner, setWinner] = useState<MarbleContestant | null>(null);
   const [countdown, setCountdown] = useState<number | null>(null);
   const [speed, setSpeed] = useState<1 | 2 | 4>(1);
-
-  const placementNumber = remaining.length;
 
   const destroyWorld = useCallback(() => {
     if (destroyingWorldRef.current) return;
@@ -1837,58 +1835,32 @@ export default function MarbleRace({
     pinchEscapeRef.current.clear();
     redGraceUntilRef.current.clear();
     lastRedResetRef.current.clear();
+    spawnPositionRef.current.clear();
 
     destroyingWorldRef.current = false;
   }, []);
 
   const resetMarbleToStart = useCallback((body: Matter.Body) => {
-    const marginX = MARBLE_RADIUS + 38;
-    const marginTop = MARBLE_RADIUS + 26;
-    const marginBottom = MARBLE_RADIUS + 34;
-    const activeBodies = [...marbleRefs.current.values()]
-      .map((meta) => meta.body)
-      .filter((candidate) => candidate.id !== body.id);
+    const meta = marbleRefs.current.get(body.id);
+    const assigned = meta
+      ? spawnPositionRef.current.get(meta.contestant.id)
+      : undefined;
 
-    let chosen = {
-      x: WIDTH / 2,
+    const fallback = {
+      x:
+        START_X +
+        MARBLE_RADIUS +
+        36 +
+        Math.random() * Math.max(1, START_WIDTH - (MARBLE_RADIUS + 36) * 2),
       y: START_Y + MARBLE_RADIUS + 34,
     };
-    let bestClearance = -1;
 
-    // Sample several positions and choose the one furthest from the other
-    // marbles. This avoids a respawn stack forming directly over one hazard.
-    for (let attempt = 0; attempt < 24; attempt += 1) {
-      const candidate = {
-        x:
-          START_X +
-          marginX +
-          Math.random() * Math.max(1, START_WIDTH - marginX * 2),
-        y:
-          START_Y +
-          marginTop +
-          Math.random() *
-            Math.max(1, START_HEIGHT - marginTop - marginBottom),
-      };
+    const chosen = assigned || fallback;
 
-      const clearance =
-        activeBodies.length === 0
-          ? 999
-          : Math.min(
-              ...activeBodies.map((other) =>
-                Math.hypot(
-                  candidate.x - other.position.x,
-                  candidate.y - other.position.y,
-                ),
-              ),
-            );
-
-      if (clearance > bestClearance) {
-        bestClearance = clearance;
-        chosen = candidate;
-      }
-    }
-
-    Body.setPosition(body, chosen);
+    Body.setPosition(body, {
+      x: chosen.x + (Math.random() - 0.5) * 6,
+      y: chosen.y + (Math.random() - 0.5) * 4,
+    });
     Body.setVelocity(body, {
       x: (Math.random() - 0.5) * 3.5,
       y: (Math.random() - 0.5) * 1.8,
@@ -1898,6 +1870,16 @@ export default function MarbleRace({
     const now = Date.now();
     redGraceUntilRef.current.set(body.id, now + 1700);
     lastRedResetRef.current.set(body.id, now);
+
+    const tracking = movementRef.current.get(body.id);
+    if (tracking) {
+      tracking.x = body.position.x;
+      tracking.y = body.position.y;
+      tracking.lowestY = body.position.y;
+      tracking.lastMovedAt = now;
+      tracking.lastProgressAt = now;
+      tracking.stuckCount = 0;
+    }
   }, []);
 
   const flingFromSpinnerPinch = useCallback(
@@ -2004,9 +1986,15 @@ export default function MarbleRace({
         stageBodies.find((body) => body.label === "start-gate") ?? null;
       Composite.add(engine.world, stageBodies);
 
-      const ordered = shuffled(roundContestants);
+      const ordered = [...roundContestants];
       const spawnPositions = makeRandomSpawnPositions(ordered.length);
       const marbleMap = new Map<number, MarbleMeta>();
+      spawnPositionRef.current = new Map(
+        ordered.map((contestant, index) => [
+          contestant.id,
+          spawnPositions[index],
+        ]),
+      );
 
       ordered.forEach((contestant, index) => {
         const { x, y } = spawnPositions[index];
@@ -2061,13 +2049,9 @@ export default function MarbleRace({
         ]),
       );
 
-      // Invisible mouse constraint is used only for accurate hover coordinates.
+      // Track pointer coordinates for hover labels only. Do not attach a
+      // MouseConstraint, because it can grab and move marble bodies.
       const mouse = Mouse.create(render.canvas);
-      const mouseConstraint = MouseConstraint.create(engine, {
-        mouse,
-        constraint: { stiffness: 0, render: { visible: false } },
-      });
-      Composite.add(engine.world, mouseConstraint);
 
       Events.on(engine, "beforeUpdate", () => {
         if (
@@ -2689,18 +2673,13 @@ export default function MarbleRace({
         setEliminationDisplay(null);
         setRound(nextRound);
 
-        // Fully stop and dispose the old Matter world first. The new world is
-        // created on a later animation frame so no old runner/render callback
-        // can touch the replacement canvas.
-        destroyWorld();
-
+        // Build the next world on a later frame. buildRound safely disposes
+        // the current Matter world before creating its replacement.
         rebuildFrameRef.current = requestAnimationFrame(() => {
-          rebuildFrameRef.current = requestAnimationFrame(() => {
-            rebuildFrameRef.current = null;
+          rebuildFrameRef.current = null;
 
-            if (!mountedRef.current || !sceneRef.current) return;
-            buildRound(nextRemaining, nextRound);
-          });
+          if (!mountedRef.current || !sceneRef.current) return;
+          buildRound(nextRemaining, nextRound);
         });
       }, 3600);
     },
@@ -2813,6 +2792,30 @@ export default function MarbleRace({
     }
   };
 
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.code !== "Space") return;
+
+      const target = event.target as HTMLElement | null;
+      const tagName = target?.tagName;
+
+      if (
+        tagName === "INPUT" ||
+        tagName === "TEXTAREA" ||
+        tagName === "BUTTON" ||
+        target?.isContentEditable
+      ) {
+        return;
+      }
+
+      event.preventDefault();
+      startRoundRef.current();
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
+
   const restartSeason = () => {
     remainingRef.current = contestants;
     eliminatedRef.current = [];
@@ -2821,9 +2824,17 @@ export default function MarbleRace({
     setRound(1);
     setWinner(null);
     setAnnouncement(null);
+    setCountdown(null);
     eliminationDisplayRef.current = null;
     setEliminationDisplay(null);
-    buildRound(contestants, 1);
+
+    destroyWorld();
+
+    rebuildFrameRef.current = requestAnimationFrame(() => {
+      rebuildFrameRef.current = null;
+      if (!mountedRef.current || !sceneRef.current) return;
+      buildRound(contestants, 1);
+    });
   };
 
   if (contestants.length < 2) {
@@ -3021,31 +3032,7 @@ export default function MarbleRace({
 
             {eliminated.map((contestant, index) => {
               const place = contestants.length - index;
-
-              
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.code !== "Space") return;
-
-      const target = event.target as HTMLElement | null;
-      const tagName = target?.tagName;
-      if (
-        tagName === "INPUT" ||
-        tagName === "TEXTAREA" ||
-        target?.isContentEditable
-      ) {
-        return;
-      }
-
-      event.preventDefault();
-      startRoundRef.current();
-    };
-
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, []);
-
-return (
+              return (
                 <div
                   key={contestant.id}
                   style={{
