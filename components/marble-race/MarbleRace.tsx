@@ -2116,21 +2116,124 @@ export default function MarbleRace({
       <div className={styles.bottomGrid}>
         <section style={{ gridColumn: "1 / -1" }}>
           <h2>Placements</h2>
-          <div className={styles.placements}>
+
+          <div
+            style={{
+              display: "flex",
+              flexWrap: "wrap",
+              alignItems: "flex-start",
+              gap: "14px",
+            }}
+          >
             {winner && (
-              <div className={styles.winnerRow}>
-                <strong>1st</strong>
-                <img src={winner.imageUrl} alt="" />
-                <span>{winner.name}</span>
+              <div
+                style={{
+                  width: 76,
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  gap: 5,
+                  textAlign: "center",
+                }}
+              >
+                <div
+                  style={{
+                    width: MARBLE_RADIUS * 2,
+                    height: MARBLE_RADIUS * 2,
+                    overflow: "hidden",
+                    border: "3px solid #d97706",
+                    borderRadius: "50%",
+                    background: "#fef3c7",
+                    boxShadow: "0 2px 6px rgba(0,0,0,.25)",
+                  }}
+                >
+                  <img
+                    src={winner.imageUrl}
+                    alt=""
+                    style={{
+                      display: "block",
+                      width: "100%",
+                      height: "100%",
+                      objectFit: "cover",
+                    }}
+                  />
+                </div>
+                <strong style={{ color: "#fbbf24", fontSize: 13 }}>1st</strong>
+                <span
+                  title={winner.name}
+                  style={{
+                    width: "100%",
+                    overflow: "hidden",
+                    color: "#f8fafc",
+                    fontSize: 11,
+                    fontWeight: 800,
+                    lineHeight: 1.15,
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {winner.name}
+                </span>
               </div>
             )}
+
             {eliminated.map((contestant, index) => {
               const place = contestants.length - index;
+
               return (
-                <div key={contestant.id}>
-                  <strong>{ordinal(place)}</strong>
-                  <img src={contestant.imageUrl} alt="" />
-                  <span>{contestant.name}</span>
+                <div
+                  key={contestant.id}
+                  style={{
+                    width: 76,
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "center",
+                    gap: 5,
+                    textAlign: "center",
+                  }}
+                >
+                  <div
+                    style={{
+                      width: MARBLE_RADIUS * 2,
+                      height: MARBLE_RADIUS * 2,
+                      overflow: "hidden",
+                      border: "3px solid #111827",
+                      borderRadius: "50%",
+                      background: "#dbeafe",
+                      boxShadow: "0 2px 6px rgba(0,0,0,.25)",
+                    }}
+                  >
+                    <img
+                      src={contestant.imageUrl}
+                      alt=""
+                      style={{
+                        display: "block",
+                        width: "100%",
+                        height: "100%",
+                        objectFit: "cover",
+                      }}
+                    />
+                  </div>
+
+                  <strong style={{ color: "#cbd5e1", fontSize: 13 }}>
+                    {ordinal(place)}
+                  </strong>
+
+                  <span
+                    title={contestant.name}
+                    style={{
+                      width: "100%",
+                      overflow: "hidden",
+                      color: "#f8fafc",
+                      fontSize: 11,
+                      fontWeight: 800,
+                      lineHeight: 1.15,
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {contestant.name}
+                  </span>
                 </div>
               );
             })}
