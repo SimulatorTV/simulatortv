@@ -133,6 +133,36 @@ function ordinal(value: number) {
   return `${value}th`;
 }
 
+function mirroredSeed(
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+) {
+  const mirroredX = Math.round(Math.abs(x - WIDTH / 2));
+  const values = [
+    mirroredX,
+    Math.round(y),
+    Math.round(width),
+    Math.round(height),
+  ];
+
+  let hash = 2166136261;
+  for (const value of values) {
+    hash ^= value;
+    hash = Math.imul(hash, 16777619);
+  }
+
+  return (hash >>> 0) / 4294967295;
+}
+
+function areMirroredBodies(a: Matter.Body, b: Matter.Body, tolerance = 10) {
+  return (
+    Math.abs(a.position.y - b.position.y) <= tolerance &&
+    Math.abs(a.position.x + b.position.x - WIDTH) <= tolerance
+  );
+}
+
 function makeWall(
   x: number,
   y: number,
@@ -148,7 +178,7 @@ function makeWall(
 
   const safeAngle =
     isLongCoursePlatform && Math.abs(suppliedAngle) < 0.035
-      ? (x < WIDTH / 2 ? 1 : -1) * (0.055 + Math.random() * 0.035)
+      ? (x < WIDTH / 2 ? 1 : -1) * 0.072
       : suppliedAngle;
 
   return Bodies.rectangle(x, y, width, height, {
@@ -168,7 +198,7 @@ function makeWall(
 }
 
 function makeRedReset(x: number, y: number, width: number, height: number) {
-  const shapeRoll = Math.random();
+  const shapeRoll = mirroredSeed(x, y, width, height);
   const common: Matter.IChamferableBodyDefinition = {
     isStatic: true,
     isSensor: true,
@@ -212,7 +242,7 @@ function makeRedReset(x: number, y: number, width: number, height: number) {
 }
 
 function makeGreenFinish(x: number, y: number, width: number, height: number) {
-  const shapeRoll = Math.random();
+  const shapeRoll = mirroredSeed(x, y, width, height);
   const common: Matter.IChamferableBodyDefinition = {
     isStatic: true,
     isSensor: true,
@@ -505,30 +535,77 @@ function enableGentleZoneMotion(
   bodies: ObstacleBody[],
   variant: number,
 ) {
-  const greenZones = bodies.filter(
-    (body) => body.plugin?.obstacleKind === "green-finish",
-  );
-  const redZones = bodies.filter(
-    (body) => body.plugin?.obstacleKind === "red-reset",
+  const outcomeZones = bodies.filter(
+    (body) =>
+      body.plugin?.obstacleKind === "green-finish" ||
+      body.plugin?.obstacleKind === "red-reset",
   );
 
-  const candidates = [
-    greenZones[variant % Math.max(greenZones.length, 1)],
-    redZones[(variant + 1) % Math.max(redZones.length, 1)],
-  ].filter(Boolean) as ObstacleBody[];
+  const processed = new Set<number>();
+  const baseAmplitude = 22 + (variant % 3) * 7;
+  const baseSpeed = 0.0011 + (variant % 4) * 0.00015;
 
-  candidates.forEach((body, index) => {
-    const horizontal = index === 0 || variant % 3 !== 0;
-    body.plugin = {
-      ...body.plugin,
-      moveAxis: horizontal ? "x" : "y",
-      moveOriginX: body.position.x,
-      moveOriginY: body.position.y,
-      moveAmplitude: horizontal ? 24 + (variant % 3) * 8 : 14,
-      moveSpeed: 0.0011 + (variant % 4) * 0.00015,
-      movePhase: index * Math.PI + variant * 0.37,
-    };
-  });
+  for (const body of outcomeZones) {
+    if (processed.has(body.id)) continue;
+
+    const mirroredPartner = outcomeZones.find(
+      (candidate) =>
+        candidate.id !== body.id &&
+        !processed.has(candidate.id) &&
+        candidate.plugin?.obstacleKind === body.plugin?.obstacleKind &&
+        areMirroredBodies(body, candidate, 14),
+    );
+
+    const isCenterBody = Math.abs(body.position.x - WIDTH / 2) < 18;
+
+    if (mirroredPartner) {
+      const left =
+        body.position.x <= mirroredPartner.position.x ? body : mirroredPartner;
+      const right = left.id === body.id ? mirroredPartner : body;
+
+      const axis: "x" | "y" = variant % 3 === 0 ? "y" : "x";
+      const sharedPhase = variant * 0.37;
+
+      left.plugin = {
+        ...left.plugin,
+        moveAxis: axis,
+        moveOriginX: left.position.x,
+        moveOriginY: left.position.y,
+        moveAmplitude: baseAmplitude,
+        moveSpeed: baseSpeed,
+        movePhase: sharedPhase,
+      };
+
+      right.plugin = {
+        ...right.plugin,
+        moveAxis: axis,
+        moveOriginX: right.position.x,
+        moveOriginY: right.position.y,
+        moveAmplitude: axis === "x" ? -baseAmplitude : baseAmplitude,
+        moveSpeed: baseSpeed,
+        movePhase: sharedPhase,
+      };
+
+      processed.add(left.id);
+      processed.add(right.id);
+      continue;
+    }
+
+    // A lone centered zone may move vertically, preserving mirror symmetry.
+    if (isCenterBody && !body.plugin?.floorZone) {
+      body.plugin = {
+        ...body.plugin,
+        moveAxis: "y",
+        moveOriginX: body.position.x,
+        moveOriginY: body.position.y,
+        moveAmplitude: 12,
+        moveSpeed: baseSpeed,
+        movePhase: variant * 0.37,
+      };
+    }
+
+    processed.add(body.id);
+  }
 }
 
 function addBottomOutcomeCoverage(
@@ -858,6 +935,69 @@ function ensureCentralDropClearance(bodies: ObstacleBody[]) {
         });
       }
     }
+  }
+}
+
+function synchronizeMirroredMotion(bodies: ObstacleBody[]) {
+  const processed = new Set<number>();
+
+  for (const body of bodies) {
+    if (processed.has(body.id)) continue;
+
+    const partner = bodies.find(
+      (candidate) =>
+        candidate.id !== body.id &&
+        !processed.has(candidate.id) &&
+        candidate.plugin?.obstacleKind === body.plugin?.obstacleKind &&
+        areMirroredBodies(body, candidate, 12),
+    );
+
+    if (!partner) continue;
+
+    const left = body.position.x <= partner.position.x ? body : partner;
+    const right = left.id === body.id ? partner : body;
+
+    if (
+      left.plugin?.moveAxis &&
+      left.plugin.moveAmplitude !== undefined &&
+      left.plugin.moveSpeed !== undefined
+    ) {
+      right.plugin = {
+        ...right.plugin,
+        moveAxis: left.plugin.moveAxis,
+        moveOriginX: right.position.x,
+        moveOriginY: right.position.y,
+        moveAmplitude:
+          left.plugin.moveAxis === "x"
+            ? -Math.abs(left.plugin.moveAmplitude)
+            : left.plugin.moveAmplitude,
+        moveSpeed: left.plugin.moveSpeed,
+        movePhase: left.plugin.movePhase ?? 0,
+      };
+
+      left.plugin.moveAmplitude =
+        left.plugin.moveAxis === "x"
+          ? Math.abs(left.plugin.moveAmplitude)
+          : left.plugin.moveAmplitude;
+    }
+
+    if (
+      left.plugin?.wrapVertical &&
+      left.plugin.wrapMinY !== undefined &&
+      left.plugin.wrapMaxY !== undefined &&
+      left.plugin.wrapSpeed !== undefined
+    ) {
+      right.plugin = {
+        ...right.plugin,
+        wrapVertical: true,
+        wrapMinY: left.plugin.wrapMinY,
+        wrapMaxY: left.plugin.wrapMaxY,
+        wrapSpeed: left.plugin.wrapSpeed,
+      };
+    }
+
+    processed.add(left.id);
+    processed.add(right.id);
   }
 }
 
@@ -1243,6 +1383,7 @@ function makeStageLayout(round: number) {
   // The hand-built reference stages already contain intentional motion.
   if (variant < 13) enableGentleZoneMotion(bodies, variant);
 
+  synchronizeMirroredMotion(bodies);
   ensureCentralDropClearance(bodies);
   addRoundedWallEnds(bodies);
   return removeUnsafeCornerGuards(bodies);
