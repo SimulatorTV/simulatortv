@@ -54,6 +54,21 @@ const CATEGORY_MARBLE = 0x0001;
 const CATEGORY_STAGE = 0x0002;
 const CATEGORY_SENSOR = 0x0004;
 
+const STAGE_COUNT = 13;
+let lastStageVariant = -1;
+
+function getRandomStageVariant() {
+  if (STAGE_COUNT <= 1) return 0;
+
+  let next = Math.floor(Math.random() * STAGE_COUNT);
+  while (next === lastStageVariant) {
+    next = Math.floor(Math.random() * STAGE_COUNT);
+  }
+
+  lastStageVariant = next;
+  return next;
+}
+
 const safeName = (name: string) => name.replace(/[<>&"]/g, "");
 
 function shuffled<T>(items: T[]): T[] {
@@ -81,10 +96,21 @@ function makeWall(
   height: number,
   options: Matter.IChamferableBodyDefinition = {},
 ) {
+  const suppliedAngle = typeof options.angle === "number" ? options.angle : 0;
+  const isLongCoursePlatform =
+    width > height * 2.5 &&
+    y > START_Y + START_HEIGHT + 28 &&
+    y < FLOOR_Y - 38;
+
+  const safeAngle =
+    isLongCoursePlatform && Math.abs(suppliedAngle) < 0.035
+      ? (x < WIDTH / 2 ? 1 : -1) * (0.055 + Math.random() * 0.035)
+      : suppliedAngle;
+
   return Bodies.rectangle(x, y, width, height, {
     isStatic: true,
-    friction: 0.12,
-    restitution: 0.72,
+    friction: 0.1,
+    restitution: 0.76,
     collisionFilter: { category: CATEGORY_STAGE },
     render: {
       fillStyle: "#d7dbe4",
@@ -92,6 +118,7 @@ function makeWall(
       lineWidth: 2,
     },
     ...options,
+    angle: safeAngle,
   }) as ObstacleBody;
 }
 
@@ -276,6 +303,64 @@ function makeSplitPath() {
   ];
 }
 
+
+function makeDiamondMaze() {
+  const pieces: ObstacleBody[] = [];
+  const centers = [
+    [300, 370],
+    [550, 450],
+    [800, 370],
+  ];
+
+  centers.forEach(([x, y], index) => {
+    const size = index === 1 ? 170 : 145;
+    pieces.push(
+      makeWall(x, y - size / 2, size, 18, {
+        angle: Math.PI / 4,
+        render: { fillStyle: "#22d3ee", strokeStyle: "#164e63", lineWidth: 3 },
+      }),
+      makeWall(x + size / 2, y, size, 18, {
+        angle: -Math.PI / 4,
+        render: { fillStyle: "#22d3ee", strokeStyle: "#164e63", lineWidth: 3 },
+      }),
+      makeWall(x, y + size / 2, size, 18, {
+        angle: Math.PI / 4,
+        render: { fillStyle: "#22d3ee", strokeStyle: "#164e63", lineWidth: 3 },
+      }),
+      makeWall(x - size / 2, y, size, 18, {
+        angle: -Math.PI / 4,
+        render: { fillStyle: "#22d3ee", strokeStyle: "#164e63", lineWidth: 3 },
+      }),
+    );
+  });
+
+  return pieces;
+}
+
+function makeSpinnerTunnel() {
+  return [
+    makeWall(155, 380, 250, 18, {
+      angle: 0.12,
+      render: { fillStyle: "#fde047", strokeStyle: "#713f12", lineWidth: 3 },
+    }),
+    makeWall(945, 380, 250, 18, {
+      angle: -0.12,
+      render: { fillStyle: "#fde047", strokeStyle: "#713f12", lineWidth: 3 },
+    }),
+    makeSpinner(280, 430, 190, 0.065),
+    makeSpinner(550, 500, 230, -0.058),
+    makeSpinner(820, 430, 190, 0.065),
+    makeWall(250, 595, 300, 18, {
+      angle: 0.14,
+      render: { fillStyle: "#fde047", strokeStyle: "#713f12", lineWidth: 3 },
+    }),
+    makeWall(850, 595, 300, 18, {
+      angle: -0.14,
+      render: { fillStyle: "#fde047", strokeStyle: "#713f12", lineWidth: 3 },
+    }),
+  ];
+}
+
 function makeStageLayout(round: number) {
   const bodies: ObstacleBody[] = [];
 
@@ -311,8 +396,8 @@ function makeStageLayout(round: number) {
   gate.label = "start-gate";
   bodies.push(gate);
 
-  // Eleven stage families rotate through the season, including pinball, hammers, funnels, rotating crosses, zig-zags, split paths, and bumper chutes.
-  const variant = round % 11;
+  // Every round chooses a random stage family. Immediate repeats are prevented.\n  // Courses may contain several green exits and several red reset hazards.
+  const variant = getRandomStageVariant();
 
   if (variant === 0) {
     for (let row = 0; row < 5; row += 1) {
@@ -323,16 +408,21 @@ function makeStageLayout(round: number) {
     }
     bodies.push(makeSpinner(285, 590, 210, 0.035));
     bodies.push(makeSpinner(815, 590, 210, -0.04));
-    bodies.push(makeRedReset(545, 555, 120, 26));
-    bodies.push(makeGreenFinish(545, 690, 260, 42));
+    bodies.push(makeRedReset(365, 575, 105, 24));
+    bodies.push(makeRedReset(735, 575, 105, 24));
+    bodies.push(makeGreenFinish(305, 690, 170, 42));
+    bodies.push(makeGreenFinish(550, 690, 150, 42));
+    bodies.push(makeGreenFinish(795, 690, 170, 42));
   } else if (variant === 1) {
     bodies.push(makeWall(250, 345, 380, 24, { angle: 0.18 }));
     bodies.push(makeWall(850, 345, 380, 24, { angle: -0.18 }));
     bodies.push(makeSpinner(550, 430, 300, 0.045));
     bodies.push(makeSpinner(310, 565, 210, -0.055));
     bodies.push(makeSpinner(790, 565, 210, 0.055));
-    bodies.push(makeRedReset(550, 520, 180, 26));
-    bodies.push(makeGreenFinish(550, 690, 230, 42));
+    bodies.push(makeRedReset(300, 535, 125, 24));
+    bodies.push(makeRedReset(800, 535, 125, 24));
+    bodies.push(makeGreenFinish(380, 690, 190, 42));
+    bodies.push(makeGreenFinish(720, 690, 190, 42));
   } else if (variant === 2) {
     bodies.push(makeWall(195, 335, 300, 22, { angle: 0.35 }));
     bodies.push(makeWall(905, 335, 300, 22, { angle: -0.35 }));
@@ -341,17 +431,23 @@ function makeStageLayout(round: number) {
     for (let i = 0; i < 8; i += 1) {
       bodies.push(makePeg(165 + i * 110, 590 + (i % 2) * 28, 14));
     }
-    bodies.push(makeRedReset(240, 660, 180, 28));
-    bodies.push(makeRedReset(860, 660, 180, 28));
-    bodies.push(makeGreenFinish(550, 690, 250, 42));
+    bodies.push(makeRedReset(180, 650, 150, 26));
+    bodies.push(makeRedReset(550, 615, 120, 24));
+    bodies.push(makeRedReset(920, 650, 150, 26));
+    bodies.push(makeGreenFinish(350, 690, 170, 42));
+    bodies.push(makeGreenFinish(750, 690, 170, 42));
   } else if (variant === 3) {
     bodies.push(makeSpinner(250, 330, 250, 0.06));
     bodies.push(makeSpinner(550, 410, 330, -0.045));
     bodies.push(makeSpinner(850, 330, 250, 0.06));
     bodies.push(makeWall(250, 535, 330, 22, { angle: -0.22 }));
     bodies.push(makeWall(850, 535, 330, 22, { angle: 0.22 }));
-    bodies.push(makeRedReset(550, 590, 150, 25));
-    bodies.push(makeGreenFinish(550, 690, 270, 42));
+    bodies.push(makeRedReset(270, 605, 120, 24));
+    bodies.push(makeRedReset(550, 585, 110, 24));
+    bodies.push(makeRedReset(830, 605, 120, 24));
+    bodies.push(makeGreenFinish(230, 690, 150, 42));
+    bodies.push(makeGreenFinish(550, 690, 150, 42));
+    bodies.push(makeGreenFinish(870, 690, 150, 42));
   } else if (variant === 4) {
     // PINBALL BUMPER FIELD: large high-bounce bumpers create pileups and ricochets.
     const bumperPositions = [
@@ -372,8 +468,11 @@ function makeStageLayout(round: number) {
     );
     bodies.push(makeWall(175, 635, 280, 20, { angle: 0.17 }));
     bodies.push(makeWall(925, 635, 280, 20, { angle: -0.17 }));
-    bodies.push(makeRedReset(550, 615, 125, 24));
-    bodies.push(makeGreenFinish(550, 690, 250, 42));
+    bodies.push(makeRedReset(350, 620, 105, 24));
+    bodies.push(makeRedReset(750, 620, 105, 24));
+    bodies.push(makeGreenFinish(235, 690, 150, 42));
+    bodies.push(makeGreenFinish(550, 690, 175, 42));
+    bodies.push(makeGreenFinish(865, 690, 150, 42));
   } else if (variant === 5) {
     // HAMMER GAUNTLET: three offset rotating hammer arms sweep across the lanes.
     bodies.push(makeWall(170, 300, 250, 20, { angle: 0.16 }));
@@ -382,9 +481,11 @@ function makeStageLayout(round: number) {
     bodies.push(makeHammer(550, 485, 350, -0.042));
     bodies.push(makeHammer(800, 390, 300, 0.055));
     bodies.push(makePeg(550, 350, 18));
-    bodies.push(makeRedReset(160, 610, 170, 26));
-    bodies.push(makeRedReset(940, 610, 170, 26));
-    bodies.push(makeGreenFinish(550, 690, 270, 42));
+    bodies.push(makeRedReset(160, 610, 150, 26));
+    bodies.push(makeRedReset(550, 600, 115, 24));
+    bodies.push(makeRedReset(940, 610, 150, 26));
+    bodies.push(makeGreenFinish(355, 690, 175, 42));
+    bodies.push(makeGreenFinish(745, 690, 175, 42));
   } else if (variant === 6) {
     // FUNNEL DROP: two broad funnels compress the pack before a final spinner.
     bodies.push(...makeFunnel(550, 270, 880, 190, 175));
@@ -393,8 +494,11 @@ function makeStageLayout(round: number) {
     bodies.push(makeSpinner(550, 555, 300, round % 2 === 0 ? 0.048 : -0.048));
     bodies.push(makeWall(235, 625, 330, 22, { angle: 0.16 }));
     bodies.push(makeWall(865, 625, 330, 22, { angle: -0.16 }));
-    bodies.push(makeRedReset(550, 625, 120, 24));
-    bodies.push(makeGreenFinish(550, 690, 260, 42));
+    bodies.push(makeRedReset(430, 620, 90, 24));
+    bodies.push(makeRedReset(670, 620, 90, 24));
+    bodies.push(makeGreenFinish(250, 690, 160, 42));
+    bodies.push(makeGreenFinish(550, 690, 145, 42));
+    bodies.push(makeGreenFinish(850, 690, 160, 42));
   } else if (variant === 7) {
     // DOUBLE ROTATING CROSS: two large crosses sweep opposite directions.
     bodies.push(...makeRotatingCross(330, 400, 280, 0.038));
@@ -402,23 +506,33 @@ function makeStageLayout(round: number) {
     bodies.push(makeBumper(550, 535, 36));
     bodies.push(makeWall(250, 620, 330, 20, { angle: 0.16 }));
     bodies.push(makeWall(850, 620, 330, 20, { angle: -0.16 }));
-    bodies.push(makeRedReset(550, 590, 135, 24));
-    bodies.push(makeGreenFinish(550, 690, 270, 42));
+    bodies.push(makeRedReset(290, 610, 105, 24));
+    bodies.push(makeRedReset(550, 575, 105, 24));
+    bodies.push(makeRedReset(810, 610, 105, 24));
+    bodies.push(makeGreenFinish(360, 690, 180, 42));
+    bodies.push(makeGreenFinish(740, 690, 180, 42));
   } else if (variant === 8) {
     // ZIG-ZAG RUN: alternating shelves create traffic jams and sudden drops.
     bodies.push(...makeZigZagWalls());
     bodies.push(makeBumper(180, 405, 22));
     bodies.push(makeBumper(920, 495, 22));
     bodies.push(makeSpinner(550, 635, 240, 0.05));
-    bodies.push(makeGreenFinish(550, 690, 260, 42));
+    bodies.push(makeRedReset(165, 645, 140, 24));
+    bodies.push(makeRedReset(935, 645, 140, 24));
+    bodies.push(makeGreenFinish(325, 690, 175, 42));
+    bodies.push(makeGreenFinish(550, 690, 145, 42));
+    bodies.push(makeGreenFinish(775, 690, 175, 42));
   } else if (variant === 9) {
     // SPLIT PATH: marbles divide left and right, then collide again near the finish.
     bodies.push(...makeSplitPath());
     bodies.push(makeSpinner(330, 565, 190, 0.052));
     bodies.push(makeSpinner(770, 565, 190, -0.052));
-    bodies.push(makeRedReset(550, 555, 120, 24));
-    bodies.push(makeGreenFinish(550, 690, 280, 42));
-  } else {
+    bodies.push(makeRedReset(550, 555, 115, 24));
+    bodies.push(makeRedReset(245, 625, 95, 24));
+    bodies.push(makeRedReset(855, 625, 95, 24));
+    bodies.push(makeGreenFinish(305, 690, 180, 42));
+    bodies.push(makeGreenFinish(795, 690, 180, 42));
+  } else if (variant === 10) {
     // BUMPER CHUTE: dense staggered bumpers make a fast, chaotic pinball descent.
     for (let row = 0; row < 4; row += 1) {
       for (let col = 0; col < 6; col += 1) {
@@ -427,9 +541,33 @@ function makeStageLayout(round: number) {
       }
     }
     bodies.push(makeRotatingCross(550, 635, 210, -0.055)[0]);
-    bodies.push(makeRedReset(165, 650, 160, 24));
-    bodies.push(makeRedReset(935, 650, 160, 24));
-    bodies.push(makeGreenFinish(550, 690, 260, 42));
+    bodies.push(makeRedReset(165, 650, 135, 24));
+    bodies.push(makeRedReset(550, 620, 105, 24));
+    bodies.push(makeRedReset(935, 650, 135, 24));
+    bodies.push(makeGreenFinish(280, 690, 155, 42));
+    bodies.push(makeGreenFinish(550, 690, 145, 42));
+    bodies.push(makeGreenFinish(820, 690, 155, 42));
+  } else if (variant === 11) {
+    // DIAMOND MAZE: three open diamonds redirect the pack into several crossing lanes.
+    bodies.push(...makeDiamondMaze());
+    bodies.push(makeBumper(550, 330, 25));
+    bodies.push(makeSpinner(550, 610, 230, 0.052));
+    bodies.push(makeRedReset(165, 650, 130, 24));
+    bodies.push(makeRedReset(430, 620, 95, 24));
+    bodies.push(makeRedReset(670, 620, 95, 24));
+    bodies.push(makeRedReset(935, 650, 130, 24));
+    bodies.push(makeGreenFinish(350, 690, 170, 42));
+    bodies.push(makeGreenFinish(750, 690, 170, 42));
+  } else {
+    // SPINNER TUNNEL: alternating slopes and fast rotors create repeated pileups.
+    bodies.push(...makeSpinnerTunnel());
+    bodies.push(makeBumper(550, 355, 30));
+    bodies.push(makeRedReset(300, 620, 105, 24));
+    bodies.push(makeRedReset(550, 600, 100, 24));
+    bodies.push(makeRedReset(800, 620, 105, 24));
+    bodies.push(makeGreenFinish(235, 690, 145, 42));
+    bodies.push(makeGreenFinish(550, 690, 155, 42));
+    bodies.push(makeGreenFinish(865, 690, 145, 42));
   }
 
   return bodies;
@@ -452,6 +590,10 @@ export default function MarbleRace({
   const gateRef = useRef<Matter.Body | null>(null);
   const hoverRef = useRef<MarbleMeta | null>(null);
   const imageCacheRef = useRef<Map<string, HTMLImageElement>>(new Map());
+  const movementRef = useRef<Map<number, { x: number; y: number; lastMovedAt: number }>>(
+    new Map(),
+  );
+  const countdownTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const [remaining, setRemaining] = useState<MarbleContestant[]>(contestants);
   const [eliminated, setEliminated] = useState<MarbleContestant[]>([]);
@@ -461,6 +603,8 @@ export default function MarbleRace({
   const [qualifiedCount, setQualifiedCount] = useState(0);
   const [announcement, setAnnouncement] = useState<string | null>(null);
   const [winner, setWinner] = useState<MarbleContestant | null>(null);
+  const [countdown, setCountdown] = useState<number | null>(null);
+  const [speed, setSpeed] = useState<1 | 2 | 4>(1);
 
   const placementNumber = remaining.length;
 
@@ -480,8 +624,13 @@ export default function MarbleRace({
     runnerRef.current = null;
     engineRef.current = null;
     marbleRefs.current.clear();
+    movementRef.current.clear();
     gateRef.current = null;
     hoverRef.current = null;
+    if (countdownTimerRef.current) {
+      clearInterval(countdownTimerRef.current);
+      countdownTimerRef.current = null;
+    }
   }, []);
 
   const resetMarbleToStart = useCallback((body: Matter.Body, index: number) => {
@@ -525,6 +674,7 @@ export default function MarbleRace({
       engine.velocityIterations = 8;
       engine.constraintIterations = 4;
       engineRef.current = engine;
+      engine.timing.timeScale = speed;
 
       const render = Render.create({
         element: sceneRef.current,
@@ -592,6 +742,16 @@ export default function MarbleRace({
       });
 
       marbleRefs.current = marbleMap;
+      movementRef.current = new Map(
+        [...marbleMap.values()].map((meta) => [
+          meta.body.id,
+          {
+            x: meta.body.position.x,
+            y: meta.body.position.y,
+            lastMovedAt: Date.now(),
+          },
+        ]),
+      );
 
       // Invisible mouse constraint is used only for accurate hover coordinates.
       const mouse = Mouse.create(render.canvas);
@@ -605,8 +765,48 @@ export default function MarbleRace({
         for (const body of Composite.allBodies(
           engine.world,
         ) as ObstacleBody[]) {
-          const speed = body.plugin?.rotateSpeed;
-          if (speed) Body.setAngle(body, body.angle + speed);
+          const rotateSpeed = body.plugin?.rotateSpeed;
+          if (rotateSpeed) Body.setAngle(body, body.angle + rotateSpeed);
+        }
+
+        if (roundStartedRef.current && !roundResolvingRef.current) {
+          const now = Date.now();
+
+          for (const meta of marbleRefs.current.values()) {
+            if (qualifiersRef.current.has(meta.contestant.id)) continue;
+
+            const tracking = movementRef.current.get(meta.body.id);
+            if (!tracking) continue;
+
+            const dx = meta.body.position.x - tracking.x;
+            const dy = meta.body.position.y - tracking.y;
+            const moved = Math.hypot(dx, dy);
+
+            if (moved > 18 || meta.body.speed > 1.1) {
+              tracking.x = meta.body.position.x;
+              tracking.y = meta.body.position.y;
+              tracking.lastMovedAt = now;
+            } else if (now - tracking.lastMovedAt > 4200) {
+              Body.applyForce(meta.body, meta.body.position, {
+                x: (Math.random() - 0.5) * 0.012,
+                y: -0.008 - Math.random() * 0.006,
+              });
+              Body.setAngularVelocity(meta.body, (Math.random() - 0.5) * 0.45);
+              tracking.lastMovedAt = now;
+            }
+
+            if (
+              meta.body.position.y > HEIGHT + 80 ||
+              meta.body.position.x < -80 ||
+              meta.body.position.x > WIDTH + 80
+            ) {
+              const activeIndex = [...marbleRefs.current.values()].findIndex(
+                (entry) => entry.body.id === meta.body.id,
+              );
+              resetMarbleToStart(meta.body, Math.max(activeIndex, 0));
+              tracking.lastMovedAt = now;
+            }
+          }
         }
 
         if (!roundStartedRef.current) {
@@ -772,7 +972,7 @@ export default function MarbleRace({
       Render.run(render);
       Runner.run(runner, engine);
     },
-    [destroyWorld, resetMarbleToStart],
+    [destroyWorld, resetMarbleToStart, speed],
   );
 
   const resolveElimination = useCallback(
@@ -848,10 +1048,12 @@ export default function MarbleRace({
     return destroyWorld;
   }, [contestants, buildRound, destroyWorld]);
 
-  const startRound = () => {
-    if (!engineRef.current || started || winner) return;
+  const releaseGate = () => {
+    if (!engineRef.current || winner) return;
+
     roundStartedRef.current = true;
     setStarted(true);
+    setCountdown(null);
     setAnnouncement(null);
 
     if (gateRef.current) {
@@ -867,6 +1069,30 @@ export default function MarbleRace({
     }
   };
 
+  const startRound = () => {
+    if (!engineRef.current || started || winner || countdown !== null) return;
+
+    let value = 3;
+    setCountdown(value);
+
+    countdownTimerRef.current = setInterval(() => {
+      value -= 1;
+
+      if (value > 0) {
+        setCountdown(value);
+        return;
+      }
+
+      if (countdownTimerRef.current) {
+        clearInterval(countdownTimerRef.current);
+        countdownTimerRef.current = null;
+      }
+
+      setCountdown(0);
+      setTimeout(releaseGate, 350);
+    }, 700);
+  };
+
   const togglePause = () => {
     if (!runnerRef.current || !engineRef.current || winner) return;
     if (paused) {
@@ -875,6 +1101,13 @@ export default function MarbleRace({
     } else {
       Runner.stop(runnerRef.current);
       setPaused(true);
+    }
+  };
+
+  const changeSpeed = (nextSpeed: 1 | 2 | 4) => {
+    setSpeed(nextSpeed);
+    if (engineRef.current) {
+      engineRef.current.timing.timeScale = nextSpeed;
     }
   };
 
@@ -915,8 +1148,17 @@ export default function MarbleRace({
               Start Round
             </button>
           )}
-          <button onClick={togglePause} disabled={!!winner}>
+          <button onClick={togglePause} disabled={!!winner || countdown !== null}>
             {paused ? "Resume" : "Pause"}
+          </button>
+          <button onClick={() => changeSpeed(1)} disabled={speed === 1}>
+            1×
+          </button>
+          <button onClick={() => changeSpeed(2)} disabled={speed === 2}>
+            2×
+          </button>
+          <button onClick={() => changeSpeed(4)} disabled={speed === 4}>
+            4×
           </button>
           <button onClick={restartSeason}>Restart</button>
         </div>
@@ -935,6 +1177,11 @@ export default function MarbleRace({
 
       <div className={styles.raceShell}>
         <div className={styles.canvas} ref={sceneRef} />
+        {countdown !== null && (
+          <div className={styles.pauseOverlay}>
+            {countdown === 0 ? "GO!" : countdown}
+          </div>
+        )}
         {paused && <div className={styles.pauseOverlay}>PAUSED</div>}
         {announcement && (
           <div className={styles.announcement}>
@@ -944,19 +1191,7 @@ export default function MarbleRace({
       </div>
 
       <div className={styles.bottomGrid}>
-        <section>
-          <h2>Still Racing</h2>
-          <div className={styles.castGrid}>
-            {remaining.map((contestant) => (
-              <div className={styles.castCard} key={contestant.id}>
-                <img src={contestant.imageUrl} alt="" />
-                <span>{contestant.name}</span>
-              </div>
-            ))}
-          </div>
-        </section>
-
-        <section>
+        <section style={{ gridColumn: "1 / -1" }}>
           <h2>Placements</h2>
           <div className={styles.placements}>
             {winner && (
