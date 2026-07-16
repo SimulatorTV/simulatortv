@@ -65,7 +65,7 @@ const CATEGORY_STAGE = 0x0002;
 const CATEGORY_SENSOR = 0x0004;
 
 const MIN_SAFE_GAP = MARBLE_RADIUS * 2 + 16;
-const CORNER_GUARD_RADIUS = MARBLE_RADIUS + 6;
+const CORNER_GUARD_RADIUS = 15;
 
 const controlButtonStyle: React.CSSProperties = {
   minWidth: 76,
@@ -633,6 +633,17 @@ function makeCornerGuard(x: number, y: number, radius = CORNER_GUARD_RADIUS) {
 
 function addRoundedWallEnds(bodies: ObstacleBody[]) {
   const guards: ObstacleBody[] = [];
+  const requiredClearance = MARBLE_RADIUS * 2 + 18;
+
+  const distanceToBodyBounds = (
+    x: number,
+    y: number,
+    body: Matter.Body,
+  ) => {
+    const closestX = Math.max(body.bounds.min.x, Math.min(x, body.bounds.max.x));
+    const closestY = Math.max(body.bounds.min.y, Math.min(y, body.bounds.max.y));
+    return Math.hypot(x - closestX, y - closestY);
+  };
 
   for (const body of bodies) {
     if (
@@ -649,11 +660,11 @@ function addRoundedWallEnds(bodies: ObstacleBody[]) {
     const longSide = Math.max(boundsWidth, boundsHeight);
     const shortSide = Math.min(boundsWidth, boundsHeight);
 
-    if (longSide < 150 || shortSide > 44) continue;
-    if (body.position.y >= FLOOR_Y - 28) continue;
-    if (body.position.y <= START_Y + START_HEIGHT + 10) continue;
+    if (longSide < 170 || shortSide > 38) continue;
+    if (body.position.y >= FLOOR_Y - 48) continue;
+    if (body.position.y <= START_Y + START_HEIGHT + 16) continue;
 
-    const halfLength = longSide / 2 - 4;
+    const halfLength = longSide / 2 - 6;
     const cos = Math.cos(body.angle);
     const sin = Math.sin(body.angle);
 
@@ -670,29 +681,138 @@ function addRoundedWallEnds(bodies: ObstacleBody[]) {
 
     for (const endpoint of endpoints) {
       if (
-        endpoint.x < 48 ||
-        endpoint.x > WIDTH - 48 ||
-        endpoint.y < START_Y + START_HEIGHT + 28 ||
-        endpoint.y > FLOOR_Y - 36
+        endpoint.x < 54 ||
+        endpoint.x > WIDTH - 54 ||
+        endpoint.y < START_Y + START_HEIGHT + 34 ||
+        endpoint.y > FLOOR_Y - 58
       ) {
         continue;
       }
 
-      const tooClose = guards.some(
+      // Never place a guard where it would narrow a route below marble width.
+      const nearAnotherObstacle = bodies.some((other) => {
+        if (
+          other.id === body.id ||
+          other.isSensor ||
+          other.label === "start-gate" ||
+          other.plugin?.obstacleKind === "corner-guard"
+        ) {
+          return false;
+        }
+
+        return (
+          distanceToBodyBounds(endpoint.x, endpoint.y, other) <
+          requiredClearance
+        );
+      });
+
+      const nearAnotherGuard = guards.some(
         (guard) =>
           Math.hypot(
             guard.position.x - endpoint.x,
             guard.position.y - endpoint.y,
-          ) < MIN_SAFE_GAP * 0.7,
+          ) <
+          requiredClearance,
       );
 
-      if (!tooClose) {
+      if (!nearAnotherObstacle && !nearAnotherGuard) {
         guards.push(makeCornerGuard(endpoint.x, endpoint.y));
       }
     }
   }
 
   bodies.push(...guards);
+}
+
+function removeUnsafeCornerGuards(bodies: ObstacleBody[]) {
+  const requiredGap = MARBLE_RADIUS * 2 + 14;
+
+  const stageBodies = bodies.filter(
+    (body) =>
+      !body.isSensor &&
+      body.plugin?.obstacleKind !== "corner-guard" &&
+      body.label !== "start-gate",
+  );
+
+  return bodies.filter((body) => {
+    if (body.plugin?.obstacleKind !== "corner-guard") return true;
+
+    return !stageBodies.some((other) => {
+      const closestX = Math.max(
+        other.bounds.min.x,
+        Math.min(body.position.x, other.bounds.max.x),
+      );
+      const closestY = Math.max(
+        other.bounds.min.y,
+        Math.min(body.position.y, other.bounds.max.y),
+      );
+
+      const distance = Math.hypot(
+        body.position.x - closestX,
+        body.position.y - closestY,
+      );
+
+      return distance < requiredGap;
+    });
+  });
+}
+
+function ensureCentralDropClearance(bodies: ObstacleBody[]) {
+  const requiredGap = MARBLE_RADIUS * 2 + 22;
+  const solids = bodies.filter(
+    (body) =>
+      body.isStatic &&
+      !body.isSensor &&
+      body.label !== "start-gate" &&
+      body.plugin?.obstacleKind !== "corner-guard",
+  );
+
+  // If two long rails cross or nearly meet in the same vertical band,
+  // move them apart slightly so at least one marble-width route remains.
+  for (let i = 0; i < solids.length; i += 1) {
+    for (let j = i + 1; j < solids.length; j += 1) {
+      const a = solids[i];
+      const b = solids[j];
+
+      const aWidth = a.bounds.max.x - a.bounds.min.x;
+      const aHeight = a.bounds.max.y - a.bounds.min.y;
+      const bWidth = b.bounds.max.x - b.bounds.min.x;
+      const bHeight = b.bounds.max.y - b.bounds.min.y;
+
+      const aLong = Math.max(aWidth, aHeight) > 190;
+      const bLong = Math.max(bWidth, bHeight) > 190;
+      if (!aLong || !bLong) continue;
+
+      const horizontalOverlap =
+        Math.min(a.bounds.max.x, b.bounds.max.x) -
+        Math.max(a.bounds.min.x, b.bounds.min.x);
+      const verticalOverlap =
+        Math.min(a.bounds.max.y, b.bounds.max.y) -
+        Math.max(a.bounds.min.y, b.bounds.min.y);
+
+      const centerDistance = Math.hypot(
+        a.position.x - b.position.x,
+        a.position.y - b.position.y,
+      );
+
+      if (
+        horizontalOverlap > 0 &&
+        verticalOverlap > 0 &&
+        centerDistance < 420
+      ) {
+        const direction = a.position.x <= b.position.x ? -1 : 1;
+
+        Body.translate(a, {
+          x: direction * requiredGap * 0.55,
+          y: -requiredGap * 0.18,
+        });
+        Body.translate(b, {
+          x: -direction * requiredGap * 0.55,
+          y: requiredGap * 0.18,
+        });
+      }
+    }
+  }
 }
 
 function makeHammer(x: number, y: number, length = 260, speed = 0.045) {
@@ -1076,8 +1196,9 @@ function makeStageLayout(round: number) {
   // The hand-built reference stages already contain intentional motion.
   if (variant < 13) enableGentleZoneMotion(bodies, variant);
 
+  ensureCentralDropClearance(bodies);
   addRoundedWallEnds(bodies);
-  return bodies;
+  return removeUnsafeCornerGuards(bodies);
 }
 
 export default function MarbleRace({
@@ -1109,6 +1230,7 @@ export default function MarbleRace({
     >
   >(new Map());
   const countdownTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const speedRef = useRef<1 | 2 | 4>(1);
 
   const [remaining, setRemaining] = useState<MarbleContestant[]>(contestants);
   const [eliminated, setEliminated] = useState<MarbleContestant[]>([]);
@@ -1117,6 +1239,10 @@ export default function MarbleRace({
   const [paused, setPaused] = useState(false);
   const [qualifiedCount, setQualifiedCount] = useState(0);
   const [announcement, setAnnouncement] = useState<string | null>(null);
+  const [eliminationDisplay, setEliminationDisplay] = useState<{
+    name: string;
+    place: number;
+  } | null>(null);
   const [winner, setWinner] = useState<MarbleContestant | null>(null);
   const [countdown, setCountdown] = useState<number | null>(null);
   const [speed, setSpeed] = useState<1 | 2 | 4>(1);
@@ -1181,6 +1307,7 @@ export default function MarbleRace({
       setPaused(false);
       setQualifiedCount(0);
       setAnnouncement(null);
+      setEliminationDisplay(null);
 
       const engine = Engine.create({
         gravity: { x: 0, y: 1.05, scale: 0.001 },
@@ -1189,7 +1316,7 @@ export default function MarbleRace({
       engine.velocityIterations = 8;
       engine.constraintIterations = 4;
       engineRef.current = engine;
-      engine.timing.timeScale = speed;
+      engine.timing.timeScale = speedRef.current;
 
       const render = Render.create({
         element: sceneRef.current,
@@ -1570,7 +1697,7 @@ export default function MarbleRace({
       Render.run(render);
       Runner.run(runner, engine);
     },
-    [destroyWorld, resetMarbleToStart, speed],
+    [destroyWorld, resetMarbleToStart],
   );
 
   const resolveElimination = useCallback(
@@ -1578,30 +1705,57 @@ export default function MarbleRace({
       const engine = engineRef.current;
       if (!engine) return;
 
-      // Remove every temporary stage object except the dark floor, then let the loser fall.
+      // Clear the course and every qualified marble so the eliminated marble
+      // bounces alone on a clean white screen.
+      for (const meta of marbleRefs.current.values()) {
+        if (meta.contestant.id !== loser.id) {
+          qualifiersRef.current.add(meta.contestant.id);
+        }
+      }
+
       for (const body of [
         ...Composite.allBodies(engine.world),
       ] as ObstacleBody[]) {
         const isLoser = body.label === `marble:${loser.id}`;
-        const isFloor =
-          body.isStatic &&
-          body.position.y >= FLOOR_Y &&
-          body.render.fillStyle === "#111827";
-        if (!isLoser && !isFloor) Composite.remove(engine.world, body);
+        if (!isLoser) Composite.remove(engine.world, body);
       }
+
+      // Invisible boundaries create a blank-screen bounce chamber.
+      const invisibleBoundaryOptions: Matter.IChamferableBodyDefinition = {
+        isStatic: true,
+        friction: 0,
+        restitution: 1.02,
+        collisionFilter: { category: CATEGORY_STAGE },
+        render: { visible: false },
+      };
+
+      Composite.add(engine.world, [
+        Bodies.rectangle(WIDTH / 2, HEIGHT - 18, WIDTH, 36, invisibleBoundaryOptions),
+        Bodies.rectangle(18, HEIGHT / 2, 36, HEIGHT, invisibleBoundaryOptions),
+        Bodies.rectangle(WIDTH - 18, HEIGHT / 2, 36, HEIGHT, invisibleBoundaryOptions),
+        Bodies.rectangle(WIDTH / 2, 18, WIDTH, 36, invisibleBoundaryOptions),
+      ]);
 
       const loserMeta = [...marbleRefs.current.values()].find(
         (entry) => entry.contestant.id === loser.id,
       );
+
       if (loserMeta) {
         Body.setStatic(loserMeta.body, false);
-        Body.setVelocity(loserMeta.body, { x: 0, y: 2 });
-        Body.setAngularVelocity(loserMeta.body, 0.08);
+        Body.setPosition(loserMeta.body, {
+          x: WIDTH / 2,
+          y: HEIGHT * 0.48,
+        });
+        Body.setVelocity(loserMeta.body, {
+          x: (Math.random() < 0.5 ? -1 : 1) * (5 + Math.random() * 3),
+          y: -7 - Math.random() * 3,
+        });
+        Body.setAngularVelocity(loserMeta.body, (Math.random() - 0.5) * 0.5);
       }
 
       const place = remainingRef.current.length;
-      const message = `${loser.name} is eliminated, finishing in ${ordinal(place)} place.`;
-      setAnnouncement(message);
+      setAnnouncement(null);
+      setEliminationDisplay({ name: loser.name, place });
 
       setTimeout(() => {
         const nextRemaining = remainingRef.current.filter(
@@ -1615,6 +1769,7 @@ export default function MarbleRace({
 
         if (nextRemaining.length === 1) {
           const seasonWinner = nextRemaining[0];
+          setEliminationDisplay(null);
           setWinner(seasonWinner);
           setAnnouncement(`${seasonWinner.name} wins the Marble Race!`);
           onSeasonFinished?.(seasonWinner, [seasonWinner, ...nextEliminated]);
@@ -1703,7 +1858,9 @@ export default function MarbleRace({
   };
 
   const changeSpeed = (nextSpeed: 1 | 2 | 4) => {
+    speedRef.current = nextSpeed;
     setSpeed(nextSpeed);
+
     if (engineRef.current) {
       engineRef.current.timing.timeScale = nextSpeed;
     }
@@ -1717,6 +1874,7 @@ export default function MarbleRace({
     setRound(1);
     setWinner(null);
     setAnnouncement(null);
+    setEliminationDisplay(null);
     buildRound(contestants, 1);
   };
 
@@ -1803,6 +1961,45 @@ export default function MarbleRace({
           </div>
         )}
         {paused && <div className={styles.pauseOverlay}>PAUSED</div>}
+        {eliminationDisplay && (
+          <div
+            style={{
+              position: "absolute",
+              inset: 0,
+              zIndex: 5,
+              pointerEvents: "none",
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              justifyContent: "flex-start",
+              paddingTop: "54px",
+              color: "#000000",
+              textAlign: "center",
+              textShadow: "0 2px 0 rgba(255,255,255,.9)",
+            }}
+          >
+            <div
+              style={{
+                maxWidth: "88%",
+                fontSize: "clamp(2.3rem, 6vw, 5.6rem)",
+                fontWeight: 1000,
+                lineHeight: 0.95,
+                overflowWrap: "anywhere",
+              }}
+            >
+              {eliminationDisplay.name}
+            </div>
+            <div
+              style={{
+                marginTop: "16px",
+                fontSize: "clamp(1.5rem, 3vw, 3rem)",
+                fontWeight: 950,
+              }}
+            >
+              Eliminated · {ordinal(eliminationDisplay.place)} Place
+            </div>
+          </div>
+        )}
         {announcement && (
           <div className={styles.announcement}>
             <div>{announcement}</div>
