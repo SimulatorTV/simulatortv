@@ -56,10 +56,10 @@ type ObstacleBody = Matter.Body & {
 const WIDTH = 1100;
 const HEIGHT = 820;
 const MARBLE_RADIUS = 24;
-const START_X = 190;
-const START_Y = 75;
-const START_WIDTH = 720;
-const START_HEIGHT = 145;
+const START_X = 42;
+const START_Y = 30;
+const START_WIDTH = WIDTH - 84;
+const START_HEIGHT = 190;
 const FLOOR_Y = HEIGHT - 42;
 const CATEGORY_MARBLE = 0x0001;
 const CATEGORY_STAGE = 0x0002;
@@ -122,6 +122,62 @@ function shuffled<T>(items: T[]): T[] {
     [output[i], output[j]] = [output[j], output[i]];
   }
   return output;
+}
+
+function makeRandomSpawnPositions(count: number) {
+  const paddingX = MARBLE_RADIUS + 20;
+  const paddingTop = MARBLE_RADIUS + 18;
+  const paddingBottom = MARBLE_RADIUS + 20;
+  const spacingX = MARBLE_RADIUS * 2 + 14;
+  const spacingY = MARBLE_RADIUS * 2 + 12;
+
+  const usableWidth = START_WIDTH - paddingX * 2;
+  const usableHeight = START_HEIGHT - paddingTop - paddingBottom;
+  const columns = Math.max(1, Math.floor(usableWidth / spacingX));
+  const rows = Math.max(3, Math.floor(usableHeight / spacingY));
+
+  const slots: Array<{ x: number; y: number }> = [];
+
+  for (let row = 0; row < rows; row += 1) {
+    for (let col = 0; col < columns; col += 1) {
+      const rowOffset = row % 2 === 1 ? spacingX * 0.35 : 0;
+      const baseX =
+        START_X +
+        paddingX +
+        col * spacingX +
+        rowOffset;
+      const baseY =
+        START_Y +
+        paddingTop +
+        row * spacingY;
+
+      if (baseX > START_X + START_WIDTH - paddingX) continue;
+
+      slots.push({
+        x: baseX + (Math.random() - 0.5) * 8,
+        y: baseY + (Math.random() - 0.5) * 6,
+      });
+    }
+  }
+
+  const randomized = shuffled(slots);
+
+  // This should comfortably fit ordinary casts. In the unlikely event there
+  // are more marbles than slots, generate additional safe random positions.
+  while (randomized.length < count) {
+    randomized.push({
+      x:
+        START_X +
+        paddingX +
+        Math.random() * Math.max(1, usableWidth),
+      y:
+        START_Y +
+        paddingTop +
+        Math.random() * Math.max(1, usableHeight),
+    });
+  }
+
+  return randomized.slice(0, count);
 }
 
 function ordinal(value: number) {
@@ -1350,23 +1406,22 @@ function makeStageLayout(round: number) {
     }),
   );
 
-  // Starting chamber side walls and removable gate.
+  // The spawn chamber fills the whole top portion of the arena. The outer
+  // side walls continue to the top, and this north wall closes the ceiling.
   bodies.push(
-    makeWall(START_X - 16, START_Y + START_HEIGHT / 2, 32, START_HEIGHT),
-  );
-  bodies.push(
-    makeWall(
-      START_X + START_WIDTH + 16,
-      START_Y + START_HEIGHT / 2,
-      32,
-      START_HEIGHT,
-    ),
+    makeWall(WIDTH / 2, 16, WIDTH, 32, {
+      render: {
+        fillStyle: "#d7dbe4",
+        strokeStyle: "#111827",
+        lineWidth: 2,
+      },
+    }),
   );
 
   const gate = makeWall(
-    START_X + START_WIDTH / 2,
+    WIDTH / 2,
     START_Y + START_HEIGHT,
-    START_WIDTH + 32,
+    WIDTH - 72,
     24,
     { render: { fillStyle: "#3b82f6", strokeStyle: "#172554", lineWidth: 3 } },
   );
@@ -1601,6 +1656,10 @@ export default function MarbleRace({
     >
   >(new Map());
   const pinchEscapeRef = useRef<Map<number, number>>(new Map());
+  const roundTransitionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
+  const mountedRef = useRef(true);
   const countdownTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const speedRef = useRef<1 | 2 | 4>(1);
   const eliminationDisplayRef = useRef<{ name: string; place: number } | null>(
@@ -1625,6 +1684,11 @@ export default function MarbleRace({
   const placementNumber = remaining.length;
 
   const destroyWorld = useCallback(() => {
+    if (roundTransitionTimerRef.current) {
+      clearTimeout(roundTransitionTimerRef.current);
+      roundTransitionTimerRef.current = null;
+    }
+
     if (renderRef.current) {
       Render.stop(renderRef.current);
       renderRef.current.canvas.remove();
@@ -1632,6 +1696,7 @@ export default function MarbleRace({
     }
     if (runnerRef.current) Runner.stop(runnerRef.current);
     if (engineRef.current) {
+      Events.off(engineRef.current);
       World.clear(engineRef.current.world, false);
       Engine.clear(engineRef.current);
     }
@@ -1649,25 +1714,27 @@ export default function MarbleRace({
     }
   }, []);
 
-  const resetMarbleToStart = useCallback((body: Matter.Body, index: number) => {
-    const columns = Math.max(
-      5,
-      Math.floor(START_WIDTH / (MARBLE_RADIUS * 2.35)),
-    );
-    const col = index % columns;
-    const row = Math.floor(index / columns);
-    const x = START_X + 45 + col * (MARBLE_RADIUS * 2.25);
-    const y = START_Y + 38 + row * (MARBLE_RADIUS * 2.15);
+  const resetMarbleToStart = useCallback((body: Matter.Body) => {
+    const marginX = MARBLE_RADIUS + 30;
+    const marginTop = MARBLE_RADIUS + 22;
+    const marginBottom = MARBLE_RADIUS + 28;
 
-    Body.setPosition(body, {
-      x: Math.min(x, START_X + START_WIDTH - 45),
-      y: Math.min(y, START_Y + START_HEIGHT - 35),
-    });
+    const x =
+      START_X +
+      marginX +
+      Math.random() * (START_WIDTH - marginX * 2);
+    const y =
+      START_Y +
+      marginTop +
+      Math.random() *
+        (START_HEIGHT - marginTop - marginBottom);
+
+    Body.setPosition(body, { x, y });
     Body.setVelocity(body, {
-      x: (Math.random() - 0.5) * 9,
-      y: -2.5 - Math.random() * 3,
+      x: (Math.random() - 0.5) * 5,
+      y: (Math.random() - 0.5) * 3,
     });
-    Body.setAngularVelocity(body, (Math.random() - 0.5) * 0.5);
+    Body.setAngularVelocity(body, (Math.random() - 0.5) * 0.35);
   }, []);
 
   const flingFromSpinnerPinch = useCallback(
@@ -1770,17 +1837,11 @@ export default function MarbleRace({
       Composite.add(engine.world, stageBodies);
 
       const ordered = shuffled(roundContestants);
+      const spawnPositions = makeRandomSpawnPositions(ordered.length);
       const marbleMap = new Map<number, MarbleMeta>();
 
       ordered.forEach((contestant, index) => {
-        const columns = Math.max(
-          5,
-          Math.floor(START_WIDTH / (MARBLE_RADIUS * 2.35)),
-        );
-        const col = index % columns;
-        const row = Math.floor(index / columns);
-        const x = START_X + 45 + col * (MARBLE_RADIUS * 2.25);
-        const y = START_Y + 38 + row * (MARBLE_RADIUS * 2.15);
+        const { x, y } = spawnPositions[index];
 
         const marble = Bodies.circle(x, y, MARBLE_RADIUS, {
           restitution: 0.98,
@@ -2000,7 +2061,7 @@ export default function MarbleRace({
                 (entry) => entry.body.id === meta.body.id,
               );
 
-              resetMarbleToStart(meta.body, Math.max(activeIndex, 0));
+              resetMarbleToStart(meta.body);
 
               tracking.x = meta.body.position.x;
               tracking.y = meta.body.position.y;
@@ -2018,7 +2079,7 @@ export default function MarbleRace({
               const activeIndex = [...marbleRefs.current.values()].findIndex(
                 (entry) => entry.body.id === meta.body.id,
               );
-              resetMarbleToStart(meta.body, Math.max(activeIndex, 0));
+              resetMarbleToStart(meta.body);
               tracking.lastMovedAt = now;
             }
           }
@@ -2079,25 +2140,36 @@ export default function MarbleRace({
               );
             }
 
-            if (
-              meta.body.position.y > START_Y + START_HEIGHT - 18 ||
-              meta.body.position.y < START_Y + 12 ||
-              meta.body.position.x < START_X + 18 ||
-              meta.body.position.x > START_X + START_WIDTH - 18
-            ) {
-              Body.setPosition(meta.body, {
-                x: Math.min(
-                  Math.max(meta.body.position.x, START_X + 36),
-                  START_X + START_WIDTH - 36,
-                ),
-                y: Math.min(
-                  Math.max(meta.body.position.y, START_Y + 30),
-                  START_Y + START_HEIGHT - 38,
-                ),
-              });
+            const leftLimit = START_X + MARBLE_RADIUS + 6;
+            const rightLimit =
+              START_X + START_WIDTH - MARBLE_RADIUS - 6;
+            const topLimit = START_Y + MARBLE_RADIUS + 4;
+            const bottomLimit =
+              START_Y + START_HEIGHT - MARBLE_RADIUS - 8;
+
+            // The physical walls handle containment. These velocity corrections
+            // are only a gentle backup and do not teleport the marble.
+            if (meta.body.position.x <= leftLimit) {
               Body.setVelocity(meta.body, {
-                x: (Math.random() - 0.5) * 11,
-                y: -4 + Math.random() * 8,
+                x: Math.abs(meta.body.velocity.x) + 1.5,
+                y: meta.body.velocity.y,
+              });
+            } else if (meta.body.position.x >= rightLimit) {
+              Body.setVelocity(meta.body, {
+                x: -Math.abs(meta.body.velocity.x) - 1.5,
+                y: meta.body.velocity.y,
+              });
+            }
+
+            if (meta.body.position.y <= topLimit) {
+              Body.setVelocity(meta.body, {
+                x: meta.body.velocity.x,
+                y: Math.abs(meta.body.velocity.y) + 1,
+              });
+            } else if (meta.body.position.y >= bottomLimit) {
+              Body.setVelocity(meta.body, {
+                x: meta.body.velocity.x,
+                y: -Math.abs(meta.body.velocity.y) - 1,
               });
             }
             index += 1;
@@ -2128,7 +2200,7 @@ export default function MarbleRace({
             const activeIndex = [...marbleRefs.current.values()].findIndex(
               (entry) => entry.body.id === marbleBody.id,
             );
-            resetMarbleToStart(marbleBody, Math.max(activeIndex, 0));
+            resetMarbleToStart(marbleBody);
           }
 
           if (sensorBody.plugin.obstacleKind === "green-finish") {
@@ -2369,7 +2441,10 @@ export default function MarbleRace({
         );
       }
 
-      setTimeout(() => {
+      roundTransitionTimerRef.current = setTimeout(() => {
+        roundTransitionTimerRef.current = null;
+        if (!mountedRef.current || engineRef.current !== engine) return;
+
         const nextRemaining = remainingRef.current.filter(
           (contestant) => contestant.id !== loser.id,
         );
@@ -2407,14 +2482,22 @@ export default function MarbleRace({
   }, [resolveElimination]);
 
   useEffect(() => {
+    mountedRef.current = true;
     remainingRef.current = contestants;
     eliminatedRef.current = [];
     setRemaining(contestants);
     setEliminated([]);
     setRound(1);
     setWinner(null);
-    if (contestants.length > 0) buildRound(contestants, 1);
-    return destroyWorld;
+
+    if (contestants.length > 0) {
+      buildRound(contestants, 1);
+    }
+
+    return () => {
+      mountedRef.current = false;
+      destroyWorld();
+    };
   }, [contestants, buildRound, destroyWorld]);
 
   const releaseGate = () => {
