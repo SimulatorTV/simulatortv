@@ -161,6 +161,14 @@ export default function SimulatorsPage() {
   buttonClass="bg-emerald-700 hover:bg-emerald-600 text-white"
 />
 
+<SimulatorCard
+  title="Marble Race"
+  description="Release contestant marbles through changing physics courses where green qualifies, red resets, and the last marble is eliminated."
+  href="/simulators/marble-race"
+  buttonText="Open Marble Race"
+  buttonClass="bg-sky-500 hover:bg-sky-400 text-black"
+/>
+
 
 <SimulatorCard
   title="Hot Seat"
