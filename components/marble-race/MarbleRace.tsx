@@ -37,7 +37,7 @@ type MarbleMeta = {
 
 type ObstacleBody = Matter.Body & {
   plugin: {
-    obstacleKind?: "red-reset" | "green-finish" | "stage";
+    obstacleKind?: "red-reset" | "green-finish" | "stage" | "corner-guard";
     rotateSpeed?: number;
   };
 };
@@ -53,6 +53,39 @@ const FLOOR_Y = HEIGHT - 42;
 const CATEGORY_MARBLE = 0x0001;
 const CATEGORY_STAGE = 0x0002;
 const CATEGORY_SENSOR = 0x0004;
+
+const MIN_SAFE_GAP = MARBLE_RADIUS * 2 + 16;
+const CORNER_GUARD_RADIUS = MARBLE_RADIUS + 6;
+
+const controlButtonStyle: React.CSSProperties = {
+  minWidth: 76,
+  padding: "12px 18px",
+  border: "2px solid #111827",
+  borderRadius: 12,
+  background: "linear-gradient(180deg, #475569 0%, #1e293b 100%)",
+  color: "#ffffff",
+  fontSize: 15,
+  fontWeight: 900,
+  letterSpacing: "0.01em",
+  cursor: "pointer",
+  boxShadow: "0 4px 0 #0f172a, 0 7px 16px rgba(0,0,0,.28)",
+  transition: "transform .12s ease, filter .12s ease, box-shadow .12s ease",
+};
+
+const activeSpeedButtonStyle: React.CSSProperties = {
+  ...controlButtonStyle,
+  background: "linear-gradient(180deg, #fbbf24 0%, #f59e0b 100%)",
+  color: "#111827",
+  boxShadow: "0 4px 0 #92400e, 0 7px 16px rgba(0,0,0,.28)",
+};
+
+const startButtonStyle: React.CSSProperties = {
+  ...controlButtonStyle,
+  minWidth: 138,
+  background: "linear-gradient(180deg, #4ade80 0%, #16a34a 100%)",
+  color: "#052e16",
+  boxShadow: "0 4px 0 #166534, 0 7px 16px rgba(0,0,0,.28)",
+};
 
 const STAGE_COUNT = 13;
 let lastStageVariant = -1;
@@ -202,6 +235,87 @@ function makeBumper(x: number, y: number, radius = 26) {
   }) as ObstacleBody;
   body.plugin = { obstacleKind: "stage" };
   return body;
+}
+
+function makeCornerGuard(x: number, y: number, radius = CORNER_GUARD_RADIUS) {
+  const body = Bodies.circle(x, y, radius, {
+    isStatic: true,
+    friction: 0,
+    restitution: 1.02,
+    collisionFilter: { category: CATEGORY_STAGE },
+    render: {
+      fillStyle: "#cbd5e1",
+      strokeStyle: "#334155",
+      lineWidth: 2,
+    },
+  }) as ObstacleBody;
+
+  body.plugin = { obstacleKind: "corner-guard" };
+  return body;
+}
+
+function addRoundedWallEnds(bodies: ObstacleBody[]) {
+  const guards: ObstacleBody[] = [];
+
+  for (const body of bodies) {
+    if (
+      !body.isStatic ||
+      body.isSensor ||
+      body.plugin?.obstacleKind === "corner-guard" ||
+      body.label === "start-gate"
+    ) {
+      continue;
+    }
+
+    const boundsWidth = body.bounds.max.x - body.bounds.min.x;
+    const boundsHeight = body.bounds.max.y - body.bounds.min.y;
+    const longSide = Math.max(boundsWidth, boundsHeight);
+    const shortSide = Math.min(boundsWidth, boundsHeight);
+
+    if (longSide < 150 || shortSide > 44) continue;
+    if (body.position.y >= FLOOR_Y - 28) continue;
+    if (body.position.y <= START_Y + START_HEIGHT + 10) continue;
+
+    const halfLength = longSide / 2 - 4;
+    const cos = Math.cos(body.angle);
+    const sin = Math.sin(body.angle);
+
+    const endpoints = [
+      {
+        x: body.position.x - cos * halfLength,
+        y: body.position.y - sin * halfLength,
+      },
+      {
+        x: body.position.x + cos * halfLength,
+        y: body.position.y + sin * halfLength,
+      },
+    ];
+
+    for (const endpoint of endpoints) {
+      if (
+        endpoint.x < 48 ||
+        endpoint.x > WIDTH - 48 ||
+        endpoint.y < START_Y + START_HEIGHT + 28 ||
+        endpoint.y > FLOOR_Y - 36
+      ) {
+        continue;
+      }
+
+      const tooClose = guards.some(
+        (guard) =>
+          Math.hypot(
+            guard.position.x - endpoint.x,
+            guard.position.y - endpoint.y,
+          ) < MIN_SAFE_GAP * 0.7,
+      );
+
+      if (!tooClose) {
+        guards.push(makeCornerGuard(endpoint.x, endpoint.y));
+      }
+    }
+  }
+
+  bodies.push(...guards);
 }
 
 function makeHammer(x: number, y: number, length = 260, speed = 0.045) {
@@ -570,6 +684,7 @@ function makeStageLayout(round: number) {
     bodies.push(makeGreenFinish(865, 690, 145, 42));
   }
 
+  addRoundedWallEnds(bodies);
   return bodies;
 }
 
@@ -590,9 +705,17 @@ export default function MarbleRace({
   const gateRef = useRef<Matter.Body | null>(null);
   const hoverRef = useRef<MarbleMeta | null>(null);
   const imageCacheRef = useRef<Map<string, HTMLImageElement>>(new Map());
-  const movementRef = useRef<Map<number, { x: number; y: number; lastMovedAt: number }>>(
-    new Map(),
-  );
+  const movementRef = useRef<
+    Map<
+      number,
+      {
+        x: number;
+        y: number;
+        lastMovedAt: number;
+        stuckCount: number;
+      }
+    >
+  >(new Map());
   const countdownTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const [remaining, setRemaining] = useState<MarbleContestant[]>(contestants);
@@ -648,10 +771,10 @@ export default function MarbleRace({
       y: Math.min(y, START_Y + START_HEIGHT - 35),
     });
     Body.setVelocity(body, {
-      x: (Math.random() - 0.5) * 5,
-      y: (Math.random() - 0.5) * 2,
+      x: (Math.random() - 0.5) * 9,
+      y: -2.5 - Math.random() * 3,
     });
-    Body.setAngularVelocity(body, (Math.random() - 0.5) * 0.2);
+    Body.setAngularVelocity(body, (Math.random() - 0.5) * 0.5);
   }, []);
 
   const buildRound = useCallback(
@@ -749,6 +872,7 @@ export default function MarbleRace({
             x: meta.body.position.x,
             y: meta.body.position.y,
             lastMovedAt: Date.now(),
+            stuckCount: 0,
           },
         ]),
       );
@@ -782,17 +906,22 @@ export default function MarbleRace({
             const dy = meta.body.position.y - tracking.y;
             const moved = Math.hypot(dx, dy);
 
-            if (moved > 18 || meta.body.speed > 1.1) {
+            if (moved > 20 || meta.body.speed > 1.25) {
               tracking.x = meta.body.position.x;
               tracking.y = meta.body.position.y;
               tracking.lastMovedAt = now;
-            } else if (now - tracking.lastMovedAt > 4200) {
-              Body.applyForce(meta.body, meta.body.position, {
-                x: (Math.random() - 0.5) * 0.012,
-                y: -0.008 - Math.random() * 0.006,
-              });
-              Body.setAngularVelocity(meta.body, (Math.random() - 0.5) * 0.45);
+              tracking.stuckCount = 0;
+            } else if (now - tracking.lastMovedAt > 2400) {
+              const activeIndex = [...marbleRefs.current.values()].findIndex(
+                (entry) => entry.body.id === meta.body.id,
+              );
+
+              resetMarbleToStart(meta.body, Math.max(activeIndex, 0));
+
+              tracking.x = meta.body.position.x;
+              tracking.y = meta.body.position.y;
               tracking.lastMovedAt = now;
+              tracking.stuckCount = 0;
             }
 
             if (
@@ -813,12 +942,48 @@ export default function MarbleRace({
           let index = 0;
           for (const meta of marbleRefs.current.values()) {
             if (qualifiersRef.current.has(meta.contestant.id)) continue;
+            const chamberCenterX = START_X + START_WIDTH / 2;
+            const horizontalPush =
+              meta.body.position.x < chamberCenterX ? 1 : -1;
+
             Body.applyForce(meta.body, meta.body.position, {
-              x: (Math.random() - 0.5) * 0.0009,
-              y: (Math.random() - 0.5) * 0.00035,
+              x:
+                horizontalPush * (0.0015 + Math.random() * 0.0018) +
+                (Math.random() - 0.5) * 0.0028,
+              y: -0.0014 + (Math.random() - 0.5) * 0.0026,
             });
-            if (meta.body.position.y > START_Y + START_HEIGHT - 20) {
-              resetMarbleToStart(meta.body, index);
+
+            if (Math.random() < 0.018) {
+              Body.setVelocity(meta.body, {
+                x: (Math.random() - 0.5) * 13,
+                y: -6 + Math.random() * 11,
+              });
+              Body.setAngularVelocity(
+                meta.body,
+                (Math.random() - 0.5) * 0.9,
+              );
+            }
+
+            if (
+              meta.body.position.y > START_Y + START_HEIGHT - 18 ||
+              meta.body.position.y < START_Y + 12 ||
+              meta.body.position.x < START_X + 18 ||
+              meta.body.position.x > START_X + START_WIDTH - 18
+            ) {
+              Body.setPosition(meta.body, {
+                x: Math.min(
+                  Math.max(meta.body.position.x, START_X + 36),
+                  START_X + START_WIDTH - 36,
+                ),
+                y: Math.min(
+                  Math.max(meta.body.position.y, START_Y + 30),
+                  START_Y + START_HEIGHT - 38,
+                ),
+              });
+              Body.setVelocity(meta.body, {
+                x: (Math.random() - 0.5) * 11,
+                y: -4 + Math.random() * 8,
+              });
             }
             index += 1;
           }
@@ -1144,23 +1309,45 @@ export default function MarbleRace({
 
         <div className={styles.controls}>
           {!started && !winner && (
-            <button className={styles.startButton} onClick={startRound}>
+            <button
+              className={styles.startButton}
+              style={startButtonStyle}
+              onClick={startRound}
+            >
               Start Round
             </button>
           )}
-          <button onClick={togglePause} disabled={!!winner || countdown !== null}>
+          <button
+            style={controlButtonStyle}
+            onClick={togglePause}
+            disabled={!!winner || countdown !== null}
+          >
             {paused ? "Resume" : "Pause"}
           </button>
-          <button onClick={() => changeSpeed(1)} disabled={speed === 1}>
+          <button
+            style={speed === 1 ? activeSpeedButtonStyle : controlButtonStyle}
+            onClick={() => changeSpeed(1)}
+            disabled={speed === 1}
+          >
             1×
           </button>
-          <button onClick={() => changeSpeed(2)} disabled={speed === 2}>
+          <button
+            style={speed === 2 ? activeSpeedButtonStyle : controlButtonStyle}
+            onClick={() => changeSpeed(2)}
+            disabled={speed === 2}
+          >
             2×
           </button>
-          <button onClick={() => changeSpeed(4)} disabled={speed === 4}>
+          <button
+            style={speed === 4 ? activeSpeedButtonStyle : controlButtonStyle}
+            onClick={() => changeSpeed(4)}
+            disabled={speed === 4}
+          >
             4×
           </button>
-          <button onClick={restartSeason}>Restart</button>
+          <button style={controlButtonStyle} onClick={restartSeason}>
+            Restart
+          </button>
         </div>
       </div>
 
