@@ -45,11 +45,15 @@ type ObstacleBody = Matter.Body & {
     moveAmplitude?: number;
     moveSpeed?: number;
     movePhase?: number;
+    wrapVertical?: boolean;
+    wrapMinY?: number;
+    wrapMaxY?: number;
+    wrapSpeed?: number;
   };
 };
 
 const WIDTH = 1100;
-const HEIGHT = 760;
+const HEIGHT = 820;
 const MARBLE_RADIUS = 24;
 const START_X = 190;
 const START_Y = 75;
@@ -93,7 +97,7 @@ const startButtonStyle: React.CSSProperties = {
   boxShadow: "0 4px 0 #166534, 0 7px 16px rgba(0,0,0,.28)",
 };
 
-const STAGE_COUNT = 13;
+const STAGE_COUNT = 16;
 let lastStageVariant = -1;
 
 function getRandomStageVariant() {
@@ -248,6 +252,207 @@ function makeGreenFinish(x: number, y: number, width: number, height: number) {
 
   body.plugin = { obstacleKind: "green-finish" };
   return body;
+}
+
+function makeCircleZone(
+  kind: "red-reset" | "green-finish",
+  x: number,
+  y: number,
+  radius: number,
+) {
+  const isGreen = kind === "green-finish";
+  const body = Bodies.circle(x, y, radius, {
+    isStatic: true,
+    isSensor: true,
+    collisionFilter: {
+      category: CATEGORY_SENSOR,
+      mask: CATEGORY_MARBLE,
+    },
+    render: {
+      fillStyle: isGreen ? "#22c55e" : "#ef4444",
+      strokeStyle: isGreen ? "#14532d" : "#7f1d1d",
+      lineWidth: 3,
+    },
+  }) as ObstacleBody;
+
+  body.plugin = { obstacleKind: kind };
+  return body;
+}
+
+function expandCourseVertically(bodies: ObstacleBody[]) {
+  const anchorY = START_Y + START_HEIGHT;
+  const scale = 1.1;
+
+  for (const body of bodies) {
+    const isOuterSideWall =
+      body.isStatic &&
+      !body.isSensor &&
+      body.bounds.max.y - body.bounds.min.y > HEIGHT * 0.72 &&
+      body.bounds.max.x - body.bounds.min.x < 70;
+
+    const isPermanentFloor =
+      body.isStatic &&
+      !body.isSensor &&
+      body.position.y >= FLOOR_Y;
+
+    const isStartStructure =
+      body.label === "start-gate" ||
+      body.position.y <= anchorY + 14;
+
+    if (isOuterSideWall || isPermanentFloor || isStartStructure) continue;
+
+    const nextY = anchorY + (body.position.y - anchorY) * scale;
+    Body.setPosition(body, {
+      x: body.position.x,
+      y: Math.min(nextY, FLOOR_Y - 28),
+    });
+
+    if (body.plugin?.moveOriginY !== undefined) {
+      body.plugin.moveOriginY =
+        anchorY + (body.plugin.moveOriginY - anchorY) * scale;
+    }
+
+    if (body.plugin?.wrapMinY !== undefined) {
+      body.plugin.wrapMinY =
+        anchorY + (body.plugin.wrapMinY - anchorY) * scale;
+    }
+
+    if (body.plugin?.wrapMaxY !== undefined) {
+      body.plugin.wrapMaxY =
+        anchorY + (body.plugin.wrapMaxY - anchorY) * scale;
+    }
+  }
+}
+
+function makeReferenceStage4() {
+  const bodies: ObstacleBody[] = [];
+
+  // Wide upper funnels feed the four spinning paddles.
+  bodies.push(
+    makeWall(235, 330, 430, 28, {
+      angle: 0.31,
+      render: { fillStyle: "#64748b", strokeStyle: "#1e293b", lineWidth: 3 },
+    }),
+    makeWall(865, 330, 430, 28, {
+      angle: -0.31,
+      render: { fillStyle: "#64748b", strokeStyle: "#1e293b", lineWidth: 3 },
+    }),
+  );
+
+  const paddleXs = [270, 460, 640, 830];
+  paddleXs.forEach((x, index) => {
+    const speed = index < 2 ? 0.095 : -0.095;
+    const paddle = makeSpinner(x, 535, 190, speed);
+    paddle.render.fillStyle = "#9ca3af";
+    paddle.render.strokeStyle = "#374151";
+    Body.setAngle(paddle, index % 2 === 0 ? -1.2 : 1.2);
+    bodies.push(paddle);
+  });
+
+  // Curved-bowl feel made from angled rails, with safe exits at both sides.
+  bodies.push(
+    makeWall(185, 625, 255, 22, { angle: 0.2 }),
+    makeWall(390, 650, 180, 22, { angle: -0.16 }),
+    makeWall(710, 650, 180, 22, { angle: 0.16 }),
+    makeWall(915, 625, 255, 22, { angle: -0.2 }),
+    makeGreenFinish(130, 730, 155, 40),
+    makeGreenFinish(970, 730, 155, 40),
+    makeRedReset(550, 708, 150, 34),
+  );
+
+  return bodies;
+}
+
+function makeReferenceStage8() {
+  const bodies: ObstacleBody[] = [];
+
+  // A broad bowl keeps the pack circulating without covering the exits.
+  bodies.push(
+    makeWall(185, 395, 390, 30, { angle: 0.37 }),
+    makeWall(915, 395, 390, 30, { angle: -0.37 }),
+    makeWall(310, 600, 360, 26, { angle: 0.16 }),
+    makeWall(790, 600, 360, 26, { angle: -0.16 }),
+    makeWall(550, 500, 300, 34, { angle: 0.42 }),
+    makeWall(550, 500, 300, 34, { angle: -0.42 }),
+  );
+
+  const leftReset = makeCircleZone("red-reset", 390, 690, 29);
+  leftReset.plugin = {
+    ...leftReset.plugin,
+    wrapVertical: true,
+    wrapMinY: 445,
+    wrapMaxY: 700,
+    wrapSpeed: 2.9,
+  };
+
+  const rightReset = makeCircleZone("red-reset", 710, 690, 29);
+  rightReset.plugin = {
+    ...rightReset.plugin,
+    wrapVertical: true,
+    wrapMinY: 445,
+    wrapMaxY: 700,
+    wrapSpeed: 2.9,
+  };
+
+  bodies.push(
+    leftReset,
+    rightReset,
+    makeGreenFinish(550, 735, 160, 42),
+    makeWall(265, 705, 320, 24, { angle: 0.1 }),
+    makeWall(835, 705, 320, 24, { angle: -0.1 }),
+  );
+
+  return bodies;
+}
+
+function makeReferenceStage9() {
+  const bodies: ObstacleBody[] = [];
+
+  // Inward side wedges and lower pyramids create three deliberate exits.
+  bodies.push(
+    makeWall(145, 385, 310, 42, { angle: 0.48 }),
+    makeWall(955, 385, 310, 42, { angle: -0.48 }),
+    makeWall(320, 650, 300, 38, { angle: -0.58 }),
+    makeWall(780, 650, 300, 38, { angle: 0.58 }),
+  );
+
+  // Center cap resembling the light-gray moving blocker from the example.
+  bodies.push(
+    makeWall(550, 455, 280, 24, {
+      render: { fillStyle: "#9ca3af", strokeStyle: "#374151", lineWidth: 3 },
+    }),
+    makeWall(500, 430, 120, 24, {
+      angle: -0.62,
+      render: { fillStyle: "#9ca3af", strokeStyle: "#374151", lineWidth: 3 },
+    }),
+    makeWall(600, 430, 120, 24, {
+      angle: 0.62,
+      render: { fillStyle: "#9ca3af", strokeStyle: "#374151", lineWidth: 3 },
+    }),
+  );
+
+  const movingBridge = makeWall(550, 575, 255, 22, {
+    render: { fillStyle: "#cbd5e1", strokeStyle: "#475569", lineWidth: 3 },
+  });
+  movingBridge.plugin = {
+    ...movingBridge.plugin,
+    obstacleKind: "stage",
+    moveAxis: "x",
+    moveOriginX: 550,
+    moveOriginY: 575,
+    moveAmplitude: 205,
+    moveSpeed: 0.0032,
+    movePhase: 0,
+  };
+
+  bodies.push(
+    movingBridge,
+    makeGreenFinish(145, 735, 180, 42),
+    makeRedReset(550, 730, 190, 42),
+    makeGreenFinish(955, 735, 180, 42),
+  );
+
+  return bodies;
 }
 
 function enableGentleZoneMotion(
@@ -844,7 +1049,7 @@ function makeStageLayout(round: number) {
     bodies.push(makeRedReset(935, 650, 130, 24));
     bodies.push(makeGreenFinish(350, 690, 170, 42));
     bodies.push(makeGreenFinish(750, 690, 170, 42));
-  } else {
+  } else if (variant === 12) {
     // SPINNER TUNNEL: alternating slopes and fast rotors create repeated pileups.
     bodies.push(...makeSpinnerTunnel());
     bodies.push(makeBumper(550, 355, 30));
@@ -854,10 +1059,23 @@ function makeStageLayout(round: number) {
     bodies.push(makeGreenFinish(235, 690, 145, 42));
     bodies.push(makeGreenFinish(550, 690, 155, 42));
     bodies.push(makeGreenFinish(865, 690, 145, 42));
+  } else if (variant === 13) {
+    // REFERENCE STAGE 4: four fast paddles, left pair clockwise and right pair counter-clockwise.
+    bodies.push(...makeReferenceStage4());
+  } else if (variant === 14) {
+    // REFERENCE STAGE 8: looping red reset balls rise through two side corridors.
+    bodies.push(...makeReferenceStage8());
+  } else {
+    // REFERENCE STAGE 9: a fast moving bridge pauses naturally at each side gap.
+    bodies.push(...makeReferenceStage9());
   }
 
-  addBottomOutcomeCoverage(bodies, variant);
-  enableGentleZoneMotion(bodies, variant);
+  // Do not blanket-cover the bottom with sensors. Routes stay open and visible.
+  expandCourseVertically(bodies);
+
+  // The hand-built reference stages already contain intentional motion.
+  if (variant < 13) enableGentleZoneMotion(bodies, variant);
+
   addRoundedWallEnds(bodies);
   return bodies;
 }
@@ -1087,6 +1305,23 @@ export default function MarbleRace({
             Body.setPosition(body, {
               x: moveAxis === "x" ? originX + offset : originX,
               y: moveAxis === "y" ? originY + offset : originY,
+            });
+          }
+
+          if (
+            body.plugin?.wrapVertical &&
+            body.plugin.wrapMinY !== undefined &&
+            body.plugin.wrapMaxY !== undefined &&
+            body.plugin.wrapSpeed !== undefined
+          ) {
+            const nextY = body.position.y - body.plugin.wrapSpeed;
+
+            Body.setPosition(body, {
+              x: body.position.x,
+              y:
+                nextY < body.plugin.wrapMinY
+                  ? body.plugin.wrapMaxY
+                  : nextY,
             });
           }
         }
