@@ -39,6 +39,12 @@ type ObstacleBody = Matter.Body & {
   plugin: {
     obstacleKind?: "red-reset" | "green-finish" | "stage" | "corner-guard";
     rotateSpeed?: number;
+    moveAxis?: "x" | "y";
+    moveOriginX?: number;
+    moveOriginY?: number;
+    moveAmplitude?: number;
+    moveSpeed?: number;
+    movePhase?: number;
   };
 };
 
@@ -142,8 +148,9 @@ function makeWall(
 
   return Bodies.rectangle(x, y, width, height, {
     isStatic: true,
-    friction: 0.1,
-    restitution: 0.76,
+    friction: 0.008,
+    frictionStatic: 0,
+    restitution: 0.9,
     collisionFilter: { category: CATEGORY_STAGE },
     render: {
       fillStyle: "#d7dbe4",
@@ -156,7 +163,8 @@ function makeWall(
 }
 
 function makeRedReset(x: number, y: number, width: number, height: number) {
-  const body = Bodies.rectangle(x, y, width, height, {
+  const shapeRoll = Math.random();
+  const common: Matter.IChamferableBodyDefinition = {
     isStatic: true,
     isSensor: true,
     collisionFilter: {
@@ -168,13 +176,39 @@ function makeRedReset(x: number, y: number, width: number, height: number) {
       strokeStyle: "#7f1d1d",
       lineWidth: 2,
     },
-  }) as ObstacleBody;
+  };
+
+  let body: ObstacleBody;
+
+  if (shapeRoll < 0.22 && width <= 145) {
+    body = Bodies.circle(
+      x,
+      y,
+      Math.max(25, Math.min(width * 0.42, height * 1.35)),
+      common,
+    ) as ObstacleBody;
+  } else if (shapeRoll < 0.42 && width <= 165) {
+    body = Bodies.polygon(
+      x,
+      y,
+      6,
+      Math.max(28, Math.min(width * 0.42, height * 1.45)),
+      common,
+    ) as ObstacleBody;
+  } else {
+    body = Bodies.rectangle(x, y, width, height, {
+      ...common,
+      chamfer: { radius: Math.min(12, height / 2) },
+    }) as ObstacleBody;
+  }
+
   body.plugin = { obstacleKind: "red-reset" };
   return body;
 }
 
 function makeGreenFinish(x: number, y: number, width: number, height: number) {
-  const body = Bodies.rectangle(x, y, width, height, {
+  const shapeRoll = Math.random();
+  const common: Matter.IChamferableBodyDefinition = {
     isStatic: true,
     isSensor: true,
     collisionFilter: {
@@ -186,9 +220,147 @@ function makeGreenFinish(x: number, y: number, width: number, height: number) {
       strokeStyle: "#14532d",
       lineWidth: 3,
     },
-  }) as ObstacleBody;
+  };
+
+  let body: ObstacleBody;
+
+  if (shapeRoll < 0.22 && width <= 160) {
+    body = Bodies.circle(
+      x,
+      y,
+      Math.max(27, Math.min(width * 0.43, height * 1.4)),
+      common,
+    ) as ObstacleBody;
+  } else if (shapeRoll < 0.42 && width <= 175) {
+    body = Bodies.polygon(
+      x,
+      y,
+      8,
+      Math.max(29, Math.min(width * 0.43, height * 1.5)),
+      common,
+    ) as ObstacleBody;
+  } else {
+    body = Bodies.rectangle(x, y, width, height, {
+      ...common,
+      chamfer: { radius: Math.min(14, height / 2) },
+    }) as ObstacleBody;
+  }
+
   body.plugin = { obstacleKind: "green-finish" };
   return body;
+}
+
+function enableGentleZoneMotion(
+  bodies: ObstacleBody[],
+  variant: number,
+) {
+  const greenZones = bodies.filter(
+    (body) => body.plugin?.obstacleKind === "green-finish",
+  );
+  const redZones = bodies.filter(
+    (body) => body.plugin?.obstacleKind === "red-reset",
+  );
+
+  const candidates = [
+    greenZones[variant % Math.max(greenZones.length, 1)],
+    redZones[(variant + 1) % Math.max(redZones.length, 1)],
+  ].filter(Boolean) as ObstacleBody[];
+
+  candidates.forEach((body, index) => {
+    const horizontal = index === 0 || variant % 3 !== 0;
+    body.plugin = {
+      ...body.plugin,
+      moveAxis: horizontal ? "x" : "y",
+      moveOriginX: body.position.x,
+      moveOriginY: body.position.y,
+      moveAmplitude: horizontal ? 24 + (variant % 3) * 8 : 14,
+      moveSpeed: 0.0011 + (variant % 4) * 0.00015,
+      movePhase: index * Math.PI + variant * 0.37,
+    };
+  });
+}
+
+function addBottomOutcomeCoverage(
+  bodies: ObstacleBody[],
+  variant: number,
+) {
+  const bottomZones = bodies
+    .filter(
+      (body) =>
+        body.isSensor &&
+        (body.plugin?.obstacleKind === "green-finish" ||
+          body.plugin?.obstacleKind === "red-reset") &&
+        body.position.y >= 575,
+    )
+    .map((body) => ({
+      min: Math.max(36, body.bounds.min.x - 8),
+      max: Math.min(WIDTH - 36, body.bounds.max.x + 8),
+    }))
+    .sort((a, b) => a.min - b.min);
+
+  const merged: Array<{ min: number; max: number }> = [];
+  for (const zone of bottomZones) {
+    const previous = merged[merged.length - 1];
+    if (!previous || zone.min > previous.max + 4) {
+      merged.push({ ...zone });
+    } else {
+      previous.max = Math.max(previous.max, zone.max);
+    }
+  }
+
+  let cursor = 36;
+  let gapIndex = 0;
+
+  const addGapZone = (start: number, end: number) => {
+    const width = end - start;
+    if (width < 22) return;
+
+    const zone = makeRedReset(
+      start + width / 2,
+      707 - (gapIndex % 2) * 5,
+      Math.max(24, width + 4),
+      28,
+    );
+    Body.setAngle(zone, (gapIndex % 2 === 0 ? 1 : -1) * 0.055);
+    bodies.push(zone);
+    gapIndex += 1;
+  };
+
+  for (const interval of merged) {
+    if (interval.min > cursor) addGapZone(cursor, interval.min);
+    cursor = Math.max(cursor, interval.max);
+  }
+
+  if (cursor < WIDTH - 36) {
+    addGapZone(cursor, WIDTH - 36);
+  }
+
+  // Sloped guide rails keep the lowest part of the board from acting like
+  // a flat waiting room. Every rail points toward an outcome sensor.
+  const guideColor = {
+    fillStyle: "#94a3b8",
+    strokeStyle: "#334155",
+    lineWidth: 2,
+  };
+
+  bodies.push(
+    makeWall(155, 674, 250, 18, {
+      angle: 0.11,
+      render: guideColor,
+    }),
+    makeWall(405, 686, 235, 18, {
+      angle: -0.09,
+      render: guideColor,
+    }),
+    makeWall(695, 686, 235, 18, {
+      angle: 0.09,
+      render: guideColor,
+    }),
+    makeWall(945, 674, 250, 18, {
+      angle: -0.11,
+      render: guideColor,
+    }),
+  );
 }
 
 function makeSpinner(x: number, y: number, length: number, speed: number) {
@@ -684,6 +856,8 @@ function makeStageLayout(round: number) {
     bodies.push(makeGreenFinish(865, 690, 145, 42));
   }
 
+  addBottomOutcomeCoverage(bodies, variant);
+  enableGentleZoneMotion(bodies, variant);
   addRoundedWallEnds(bodies);
   return bodies;
 }
@@ -831,10 +1005,11 @@ export default function MarbleRace({
         const y = START_Y + 38 + row * (MARBLE_RADIUS * 2.15);
 
         const marble = Bodies.circle(x, y, MARBLE_RADIUS, {
-          restitution: 0.86,
-          friction: 0.016,
-          frictionAir: 0.005,
-          density: 0.004,
+          restitution: 0.96,
+          friction: 0.0015,
+          frictionStatic: 0,
+          frictionAir: 0.0012,
+          density: 0.0038,
           collisionFilter: {
             category: CATEGORY_MARBLE,
             mask: CATEGORY_MARBLE | CATEGORY_STAGE | CATEGORY_SENSOR,
@@ -891,6 +1066,29 @@ export default function MarbleRace({
         ) as ObstacleBody[]) {
           const rotateSpeed = body.plugin?.rotateSpeed;
           if (rotateSpeed) Body.setAngle(body, body.angle + rotateSpeed);
+
+          const moveAxis = body.plugin?.moveAxis;
+          const originX = body.plugin?.moveOriginX;
+          const originY = body.plugin?.moveOriginY;
+          const amplitude = body.plugin?.moveAmplitude;
+          const moveSpeed = body.plugin?.moveSpeed;
+          const phase = body.plugin?.movePhase ?? 0;
+
+          if (
+            moveAxis &&
+            originX !== undefined &&
+            originY !== undefined &&
+            amplitude !== undefined &&
+            moveSpeed !== undefined
+          ) {
+            const offset =
+              Math.sin(engine.timing.timestamp * moveSpeed + phase) * amplitude;
+
+            Body.setPosition(body, {
+              x: moveAxis === "x" ? originX + offset : originX,
+              y: moveAxis === "y" ? originY + offset : originY,
+            });
+          }
         }
 
         if (roundStartedRef.current && !roundResolvingRef.current) {
@@ -906,12 +1104,12 @@ export default function MarbleRace({
             const dy = meta.body.position.y - tracking.y;
             const moved = Math.hypot(dx, dy);
 
-            if (moved > 20 || meta.body.speed > 1.25) {
+            if (moved > 26 || meta.body.speed > 1.8) {
               tracking.x = meta.body.position.x;
               tracking.y = meta.body.position.y;
               tracking.lastMovedAt = now;
               tracking.stuckCount = 0;
-            } else if (now - tracking.lastMovedAt > 2400) {
+            } else if (now - tracking.lastMovedAt > 1900) {
               const activeIndex = [...marbleRefs.current.values()].findIndex(
                 (entry) => entry.body.id === meta.body.id,
               );
