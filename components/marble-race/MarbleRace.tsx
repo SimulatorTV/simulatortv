@@ -34,7 +34,12 @@ type MarbleMeta = {
   image: HTMLImageElement | null;
 };
 
-type LevelId = "paddle-bowl" | "rising-resets" | "moving-bridge" | "plinko";
+type LevelId =
+  | "paddle-bowl"
+  | "rising-resets"
+  | "moving-bridge"
+  | "plinko"
+  | "diamonds";
 
 type LevelDefinition = {
   id: LevelId;
@@ -191,6 +196,25 @@ function makeRedReset(x: number, y: number, width: number, height: number) {
   return body;
 }
 
+function makeCircleReset(x: number, y: number, radius: number) {
+  const body = Bodies.circle(x, y, radius, {
+    isStatic: true,
+    isSensor: true,
+    collisionFilter: {
+      category: CATEGORY_SENSOR,
+      mask: CATEGORY_MARBLE,
+    },
+    render: {
+      fillStyle: "#ef4444",
+      strokeStyle: "#7f1d1d",
+      lineWidth: 3,
+    },
+  }) as ObstacleBody;
+
+  body.plugin = { kind: "red-reset" };
+  return body;
+}
+
 function makeGreenFinish(x: number, y: number, width: number, height: number) {
   const body = Bodies.rectangle(x, y, width, height, {
     isStatic: true,
@@ -301,14 +325,16 @@ function buildPaddleBowl() {
 
   // Smaller paddles with generous spacing so marbles cannot become wedged.
   const paddleData = [
-    { x: 245, y: 500, angle: -0.7, speed: 0.075 },
-    { x: 440, y: 545, angle: 0.65, speed: -0.075 },
-    { x: 660, y: 545, angle: -0.65, speed: 0.075 },
-    { x: 855, y: 500, angle: 0.7, speed: -0.075 },
+    { x: 245, y: 500, angle: -0.7, speed: 0.075, length: 118 },
+    // The two middle paddles are 220px apart and each is 220px long.
+    // Their tips meet exactly whenever both paddles are parallel.
+    { x: 440, y: 545, angle: 0.65, speed: -0.075, length: 220 },
+    { x: 660, y: 545, angle: -0.65, speed: 0.075, length: 220 },
+    { x: 855, y: 500, angle: 0.7, speed: -0.075, length: 118 },
   ];
 
-  paddleData.forEach(({ x, y, angle, speed }) => {
-    const spinner = makeSpinner(x, y, 118, speed, "#a3a3a3");
+  paddleData.forEach(({ x, y, angle, speed, length }) => {
+    const spinner = makeSpinner(x, y, length, speed, "#a3a3a3");
     Body.setAngle(spinner, angle);
     bodies.push(spinner);
   });
@@ -423,6 +449,63 @@ function buildPlinko() {
   return bodies;
 }
 
+function buildDiamonds() {
+  const bodies = makeBaseStage();
+
+  const diamondColor = {
+    fillStyle: "#22d3ee",
+    strokeStyle: "#164e63",
+    lineWidth: 3,
+  };
+
+  const makeDiamond = (x: number, y: number, size = 92) =>
+    makeWall(x, y, size, size, {
+      angle: Math.PI / 4,
+      chamfer: { radius: 8 },
+      render: diamondColor,
+    });
+
+  // Staggered rows create narrow but safe channels wider than one marble.
+  const rows = [
+    {
+      y: 330,
+      xs: [145, 335, 525, 715, 905],
+      size: 88,
+    },
+    {
+      y: 455,
+      xs: [235, 430, 670, 865],
+      size: 96,
+    },
+    {
+      y: 585,
+      xs: [145, 335, 525, 715, 905],
+      size: 88,
+    },
+  ];
+
+  rows.forEach((row) => {
+    row.xs.forEach((x) => {
+      bodies.push(makeDiamond(x, row.y, row.size));
+    });
+  });
+
+  // Two circular red reset hazards appear from left to right among the paths.
+  bodies.push(
+    makeCircleReset(360, 515, 29),
+    makeCircleReset(740, 515, 29),
+  );
+
+  // Small side guides prevent marbles from resting against the outer walls.
+  bodies.push(
+    makeWall(82, 665, 130, 18, { angle: 0.14 }),
+    makeWall(WIDTH - 82, 665, 130, 18, { angle: -0.14 }),
+    makeFullFloorZone("green-finish"),
+  );
+
+  return bodies;
+}
+
 const LEVELS: LevelDefinition[] = [
   {
     id: "paddle-bowl",
@@ -449,6 +532,13 @@ const LEVELS: LevelDefinition[] = [
     description:
       "Marbles bounce through a peg board into alternating red and green slots.",
     build: buildPlinko,
+  },
+  {
+    id: "diamonds",
+    name: "Diamonds",
+    description:
+      "Slide through narrow diamond pathways while avoiding two red reset circles.",
+    build: buildDiamonds,
   },
 ];
 
