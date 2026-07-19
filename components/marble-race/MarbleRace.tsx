@@ -31,12 +31,21 @@ type MarbleRaceProps = {
 type MarbleMeta = {
   contestant: MarbleContestant;
   body: Matter.Body;
-  textureUrl: string;
+  image: HTMLImageElement | null;
+};
+
+type LevelId = "paddle-bowl" | "rising-resets" | "moving-bridge";
+
+type LevelDefinition = {
+  id: LevelId;
+  name: string;
+  description: string;
+  build: () => ObstacleBody[];
 };
 
 type ObstacleBody = Matter.Body & {
   plugin: {
-    obstacleKind?: "red-reset" | "green-finish" | "stage" | "corner-guard";
+    kind?: "stage" | "red-reset" | "green-finish" | "floor";
     rotateSpeed?: number;
     moveAxis?: "x" | "y";
     moveOriginX?: number;
@@ -48,136 +57,20 @@ type ObstacleBody = Matter.Body & {
     wrapMinY?: number;
     wrapMaxY?: number;
     wrapSpeed?: number;
-    floorZone?: boolean;
   };
 };
 
 const WIDTH = 1100;
 const HEIGHT = 820;
+const FLOOR_Y = HEIGHT - 42;
 const MARBLE_RADIUS = 24;
 const START_X = 42;
 const START_Y = 30;
 const START_WIDTH = WIDTH - 84;
 const START_HEIGHT = 190;
-const FLOOR_Y = HEIGHT - 42;
 const CATEGORY_MARBLE = 0x0001;
 const CATEGORY_STAGE = 0x0002;
 const CATEGORY_SENSOR = 0x0004;
-
-const MIN_SAFE_GAP = MARBLE_RADIUS * 2 + 16;
-const CORNER_GUARD_RADIUS = 15;
-
-const controlButtonStyle: React.CSSProperties = {
-  minWidth: 76,
-  padding: "12px 18px",
-  border: "2px solid #111827",
-  borderRadius: 12,
-  background: "linear-gradient(180deg, #475569 0%, #1e293b 100%)",
-  color: "#ffffff",
-  fontSize: 15,
-  fontWeight: 900,
-  letterSpacing: "0.01em",
-  cursor: "pointer",
-  boxShadow: "0 4px 0 #0f172a, 0 7px 16px rgba(0,0,0,.28)",
-  transition: "transform .12s ease, filter .12s ease, box-shadow .12s ease",
-};
-
-const activeSpeedButtonStyle: React.CSSProperties = {
-  ...controlButtonStyle,
-  background: "linear-gradient(180deg, #fbbf24 0%, #f59e0b 100%)",
-  color: "#111827",
-  boxShadow: "0 4px 0 #92400e, 0 7px 16px rgba(0,0,0,.28)",
-};
-
-const startButtonStyle: React.CSSProperties = {
-  ...controlButtonStyle,
-  minWidth: 138,
-  background: "linear-gradient(180deg, #4ade80 0%, #16a34a 100%)",
-  color: "#052e16",
-  boxShadow: "0 4px 0 #166534, 0 7px 16px rgba(0,0,0,.28)",
-};
-
-const STAGE_COUNT = 16;
-let lastStageVariant = -1;
-
-function getRandomStageVariant() {
-  if (STAGE_COUNT <= 1) return 0;
-
-  let next = Math.floor(Math.random() * STAGE_COUNT);
-  while (next === lastStageVariant) {
-    next = Math.floor(Math.random() * STAGE_COUNT);
-  }
-
-  lastStageVariant = next;
-  return next;
-}
-
-const safeName = (name: string) => name.replace(/[<>&"]/g, "");
-
-function shuffled<T>(items: T[]): T[] {
-  const output = [...items];
-  for (let i = output.length - 1; i > 0; i -= 1) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [output[i], output[j]] = [output[j], output[i]];
-  }
-  return output;
-}
-
-function makeRandomSpawnPositions(count: number) {
-  const paddingX = MARBLE_RADIUS + 20;
-  const paddingTop = MARBLE_RADIUS + 18;
-  const paddingBottom = MARBLE_RADIUS + 20;
-  const spacingX = MARBLE_RADIUS * 2 + 14;
-  const spacingY = MARBLE_RADIUS * 2 + 12;
-
-  const usableWidth = START_WIDTH - paddingX * 2;
-  const usableHeight = START_HEIGHT - paddingTop - paddingBottom;
-  const columns = Math.max(1, Math.floor(usableWidth / spacingX));
-  const rows = Math.max(3, Math.floor(usableHeight / spacingY));
-
-  const slots: Array<{ x: number; y: number }> = [];
-
-  for (let row = 0; row < rows; row += 1) {
-    for (let col = 0; col < columns; col += 1) {
-      const rowOffset = row % 2 === 1 ? spacingX * 0.35 : 0;
-      const baseX =
-        START_X +
-        paddingX +
-        col * spacingX +
-        rowOffset;
-      const baseY =
-        START_Y +
-        paddingTop +
-        row * spacingY;
-
-      if (baseX > START_X + START_WIDTH - paddingX) continue;
-
-      slots.push({
-        x: baseX + (Math.random() - 0.5) * 8,
-        y: baseY + (Math.random() - 0.5) * 6,
-      });
-    }
-  }
-
-  const randomized = shuffled(slots);
-
-  // This should comfortably fit ordinary casts. In the unlikely event there
-  // are more marbles than slots, generate additional safe random positions.
-  while (randomized.length < count) {
-    randomized.push({
-      x:
-        START_X +
-        paddingX +
-        Math.random() * Math.max(1, usableWidth),
-      y:
-        START_Y +
-        paddingTop +
-        Math.random() * Math.max(1, usableHeight),
-    });
-  }
-
-  return randomized.slice(0, count);
-}
 
 function ordinal(value: number) {
   const mod100 = value % 100;
@@ -188,34 +81,13 @@ function ordinal(value: number) {
   return `${value}th`;
 }
 
-function mirroredSeed(
-  x: number,
-  y: number,
-  width: number,
-  height: number,
-) {
-  const mirroredX = Math.round(Math.abs(x - WIDTH / 2));
-  const values = [
-    mirroredX,
-    Math.round(y),
-    Math.round(width),
-    Math.round(height),
-  ];
-
-  let hash = 2166136261;
-  for (const value of values) {
-    hash ^= value;
-    hash = Math.imul(hash, 16777619);
+function shuffled<T>(items: T[]) {
+  const copy = [...items];
+  for (let index = copy.length - 1; index > 0; index -= 1) {
+    const swapIndex = Math.floor(Math.random() * (index + 1));
+    [copy[index], copy[swapIndex]] = [copy[swapIndex], copy[index]];
   }
-
-  return (hash >>> 0) / 4294967295;
-}
-
-function areMirroredBodies(a: Matter.Body, b: Matter.Body, tolerance = 10) {
-  return (
-    Math.abs(a.position.y - b.position.y) <= tolerance &&
-    Math.abs(a.position.x + b.position.x - WIDTH) <= tolerance
-  );
+  return copy;
 }
 
 function makeWall(
@@ -225,391 +97,175 @@ function makeWall(
   height: number,
   options: Matter.IChamferableBodyDefinition = {},
 ) {
-  const suppliedAngle = typeof options.angle === "number" ? options.angle : 0;
-  const isLongCoursePlatform =
-    width > height * 2.5 &&
-    y > START_Y + START_HEIGHT + 28 &&
-    y < FLOOR_Y - 38;
-
-  const safeAngle =
-    isLongCoursePlatform && Math.abs(suppliedAngle) < 0.035
-      ? (x < WIDTH / 2 ? 1 : -1) * 0.072
-      : suppliedAngle;
-
-  return Bodies.rectangle(x, y, width, height, {
+  const body = Bodies.rectangle(x, y, width, height, {
     isStatic: true,
-    friction: 0.001,
+    friction: 0.002,
     frictionStatic: 0,
-    restitution: 0.93,
-    collisionFilter: { category: CATEGORY_STAGE },
+    restitution: 0.92,
+    collisionFilter: {
+      category: CATEGORY_STAGE,
+      mask: CATEGORY_MARBLE | CATEGORY_STAGE,
+    },
     render: {
-      fillStyle: "#d7dbe4",
-      strokeStyle: "#111827",
-      lineWidth: 2,
+      fillStyle: "#cbd5e1",
+      strokeStyle: "#1e293b",
+      lineWidth: 3,
     },
     ...options,
-    angle: safeAngle,
   }) as ObstacleBody;
+
+  body.plugin = { ...body.plugin, kind: body.plugin?.kind || "stage" };
+  return body;
+}
+
+function makeSpinner(
+  x: number,
+  y: number,
+  length: number,
+  speed: number,
+  color = "#fbbf24",
+) {
+  const body = Bodies.rectangle(x, y, length, 18, {
+    isStatic: true,
+    friction: 0,
+    restitution: 1.06,
+    collisionFilter: { category: CATEGORY_STAGE, mask: CATEGORY_MARBLE },
+    render: { fillStyle: color, strokeStyle: "#422006", lineWidth: 3 },
+  }) as ObstacleBody;
+
+  body.plugin = { kind: "stage", rotateSpeed: speed };
+  return body;
 }
 
 function makeRedReset(x: number, y: number, width: number, height: number) {
-  const shapeRoll = mirroredSeed(x, y, width, height);
-  const common: Matter.IChamferableBodyDefinition = {
+  const body = Bodies.rectangle(x, y, width, height, {
     isStatic: true,
     isSensor: true,
-    collisionFilter: {
-      category: CATEGORY_SENSOR,
-      mask: CATEGORY_MARBLE,
-    },
-    render: {
-      fillStyle: "#ef4444",
-      strokeStyle: "#7f1d1d",
-      lineWidth: 2,
-    },
-  };
+    chamfer: { radius: Math.min(12, height / 2) },
+    collisionFilter: { category: CATEGORY_SENSOR, mask: CATEGORY_MARBLE },
+    render: { fillStyle: "#ef4444", strokeStyle: "#7f1d1d", lineWidth: 3 },
+  }) as ObstacleBody;
 
-  let body: ObstacleBody;
-
-  if (shapeRoll < 0.22 && width <= 145) {
-    body = Bodies.circle(
-      x,
-      y,
-      Math.max(25, Math.min(width * 0.42, height * 1.35)),
-      common,
-    ) as ObstacleBody;
-  } else if (shapeRoll < 0.42 && width <= 165) {
-    body = Bodies.polygon(
-      x,
-      y,
-      6,
-      Math.max(28, Math.min(width * 0.42, height * 1.45)),
-      common,
-    ) as ObstacleBody;
-  } else {
-    body = Bodies.rectangle(x, y, width, height, {
-      ...common,
-      chamfer: { radius: Math.min(12, height / 2) },
-    }) as ObstacleBody;
-  }
-
-  body.plugin = { obstacleKind: "red-reset" };
+  body.plugin = { kind: "red-reset" };
   return body;
 }
 
 function makeGreenFinish(x: number, y: number, width: number, height: number) {
-  const shapeRoll = mirroredSeed(x, y, width, height);
-  const common: Matter.IChamferableBodyDefinition = {
+  const body = Bodies.rectangle(x, y, width, height, {
     isStatic: true,
     isSensor: true,
-    collisionFilter: {
-      category: CATEGORY_SENSOR,
-      mask: CATEGORY_MARBLE,
-    },
-    render: {
-      fillStyle: "#22c55e",
-      strokeStyle: "#14532d",
-      lineWidth: 3,
-    },
-  };
-
-  let body: ObstacleBody;
-
-  if (shapeRoll < 0.22 && width <= 160) {
-    body = Bodies.circle(
-      x,
-      y,
-      Math.max(27, Math.min(width * 0.43, height * 1.4)),
-      common,
-    ) as ObstacleBody;
-  } else if (shapeRoll < 0.42 && width <= 175) {
-    body = Bodies.polygon(
-      x,
-      y,
-      8,
-      Math.max(29, Math.min(width * 0.43, height * 1.5)),
-      common,
-    ) as ObstacleBody;
-  } else {
-    body = Bodies.rectangle(x, y, width, height, {
-      ...common,
-      chamfer: { radius: Math.min(14, height / 2) },
-    }) as ObstacleBody;
-  }
-
-  body.plugin = { obstacleKind: "green-finish" };
-  return body;
-}
-
-function makeCircleZone(
-  kind: "red-reset" | "green-finish",
-  x: number,
-  y: number,
-  radius: number,
-) {
-  const isGreen = kind === "green-finish";
-  const body = Bodies.circle(x, y, radius, {
-    isStatic: true,
-    isSensor: true,
-    collisionFilter: {
-      category: CATEGORY_SENSOR,
-      mask: CATEGORY_MARBLE,
-    },
-    render: {
-      fillStyle: isGreen ? "#22c55e" : "#ef4444",
-      strokeStyle: isGreen ? "#14532d" : "#7f1d1d",
-      lineWidth: 3,
-    },
+    chamfer: { radius: Math.min(14, height / 2) },
+    collisionFilter: { category: CATEGORY_SENSOR, mask: CATEGORY_MARBLE },
+    render: { fillStyle: "#22c55e", strokeStyle: "#14532d", lineWidth: 3 },
   }) as ObstacleBody;
 
-  body.plugin = { obstacleKind: kind };
+  body.plugin = { kind: "green-finish" };
   return body;
 }
 
-function snapOutcomeZonesIntoFloor(bodies: ObstacleBody[]) {
-  for (const body of bodies) {
-    const kind = body.plugin?.obstacleKind;
-    if (kind !== "green-finish" && kind !== "red-reset") continue;
+function makeResetBall(
+  x: number,
+  y: number,
+  minY: number,
+  maxY: number,
+  speed: number,
+) {
+  const body = Bodies.circle(x, y, 29, {
+    isStatic: true,
+    isSensor: true,
+    collisionFilter: { category: CATEGORY_SENSOR, mask: CATEGORY_MARBLE },
+    render: { fillStyle: "#ef4444", strokeStyle: "#7f1d1d", lineWidth: 3 },
+  }) as ObstacleBody;
 
-    // Only convert zones intended as bottom exits. Moving hazards higher in
-    // the course remain normal shapes.
-    if (body.position.y < FLOOR_Y - 135 || body.plugin?.wrapVertical) continue;
-
-    const originalWidth = body.bounds.max.x - body.bounds.min.x;
-    const zoneWidth = Math.max(
-      130,
-      Math.min(WIDTH - 72, originalWidth * 1.28),
-    );
-
-    const replacement = Bodies.rectangle(
-      body.position.x,
-      FLOOR_Y - 7,
-      zoneWidth,
-      34,
-      {
-        isStatic: true,
-        isSensor: true,
-        angle: 0,
-        collisionFilter: {
-          category: CATEGORY_SENSOR,
-          mask: CATEGORY_MARBLE,
-        },
-        render: {
-          fillStyle: kind === "green-finish" ? "#22c55e" : "#ef4444",
-          strokeStyle: kind === "green-finish" ? "#14532d" : "#7f1d1d",
-          lineWidth: 2,
-        },
-      },
-    ) as ObstacleBody;
-
-    replacement.plugin = {
-      obstacleKind: kind,
-      floorZone: true,
-    };
-
-    const index = bodies.indexOf(body);
-    if (index >= 0) bodies[index] = replacement;
-  }
-}
-
-function addDeadEndOutcomeZones(bodies: ObstacleBody[]) {
-  const floorZones = bodies
-    .filter(
-      (body) =>
-        body.isSensor &&
-        body.plugin?.floorZone &&
-        (body.plugin?.obstacleKind === "green-finish" ||
-          body.plugin?.obstacleKind === "red-reset"),
-    )
-    .sort((a, b) => a.bounds.min.x - b.bounds.min.x);
-
-  const occupied: Array<{ min: number; max: number }> = floorZones.map((body) => ({
-    min: Math.max(36, body.bounds.min.x),
-    max: Math.min(WIDTH - 36, body.bounds.max.x),
-  }));
-
-  const merged: Array<{ min: number; max: number }> = [];
-  for (const interval of occupied) {
-    const previous = merged[merged.length - 1];
-    if (!previous || interval.min > previous.max + 18) {
-      merged.push({ ...interval });
-    } else {
-      previous.max = Math.max(previous.max, interval.max);
-    }
-  }
-
-  const lowSolids = bodies.filter(
-    (body) =>
-      !body.isSensor &&
-      body.label !== "start-gate" &&
-      body.position.y > FLOOR_Y - 235 &&
-      body.position.y < FLOOR_Y - 35,
-  );
-
-  const addRedFloor = (centerX: number, width: number) => {
-    const safeWidth = Math.max(130, Math.min(width, 230));
-    const zone = Bodies.rectangle(centerX, FLOOR_Y - 7, safeWidth, 34, {
-      isStatic: true,
-      isSensor: true,
-      collisionFilter: {
-        category: CATEGORY_SENSOR,
-        mask: CATEGORY_MARBLE,
-      },
-      render: {
-        fillStyle: "#ef4444",
-        strokeStyle: "#7f1d1d",
-        lineWidth: 2,
-      },
-    }) as ObstacleBody;
-
-    zone.plugin = {
-      obstacleKind: "red-reset",
-      floorZone: true,
-    };
-
-    bodies.push(zone);
-    merged.push({
-      min: centerX - safeWidth / 2,
-      max: centerX + safeWidth / 2,
-    });
+  body.plugin = {
+    kind: "red-reset",
+    wrapVertical: true,
+    wrapMinY: minY,
+    wrapMaxY: maxY,
+    wrapSpeed: speed,
   };
 
-  // Any broad uncovered floor directly below a low obstacle cluster is treated
-  // as a dead-end landing pocket and receives a red reset floor.
-  const gaps: Array<{ min: number; max: number }> = [];
-  let cursor = 36;
-
-  for (const interval of merged.sort((a, b) => a.min - b.min)) {
-    if (interval.min - cursor >= 150) {
-      gaps.push({ min: cursor, max: interval.min });
-    }
-    cursor = Math.max(cursor, interval.max);
-  }
-
-  if (WIDTH - 36 - cursor >= 150) {
-    gaps.push({ min: cursor, max: WIDTH - 36 });
-  }
-
-  for (const gap of gaps) {
-    const centerX = (gap.min + gap.max) / 2;
-    const gapWidth = gap.max - gap.min;
-
-    const hasLowObstacleAbove = lowSolids.some(
-      (body) =>
-        body.bounds.max.x > gap.min - MARBLE_RADIUS &&
-        body.bounds.min.x < gap.max + MARBLE_RADIUS,
-    );
-
-    if (!hasLowObstacleAbove) continue;
-
-    const mirroredCenter = WIDTH - centerX;
-    const zoneWidth = Math.min(gapWidth - 34, 210);
-
-    addRedFloor(centerX, zoneWidth);
-
-    if (Math.abs(mirroredCenter - centerX) > 70) {
-      const mirroredAlreadyCovered = bodies.some(
-        (body) =>
-          body.isSensor &&
-          body.plugin?.floorZone &&
-          body.bounds.min.x <= mirroredCenter &&
-          body.bounds.max.x >= mirroredCenter,
-      );
-
-      if (!mirroredAlreadyCovered) {
-        addRedFloor(mirroredCenter, zoneWidth);
-      }
-    }
-  }
+  return body;
 }
 
-function expandCourseVertically(bodies: ObstacleBody[]) {
-  const anchorY = START_Y + START_HEIGHT;
-  const scale = 1.1;
-
-  for (const body of bodies) {
-    const isOuterSideWall =
-      body.isStatic &&
-      !body.isSensor &&
-      body.bounds.max.y - body.bounds.min.y > HEIGHT * 0.72 &&
-      body.bounds.max.x - body.bounds.min.x < 70;
-
-    const isPermanentFloor =
-      body.isStatic &&
-      !body.isSensor &&
-      body.position.y >= FLOOR_Y;
-
-    const isStartStructure =
-      body.label === "start-gate" ||
-      body.position.y <= anchorY + 14;
-
-    if (isOuterSideWall || isPermanentFloor || isStartStructure) continue;
-
-    const nextY = anchorY + (body.position.y - anchorY) * scale;
-    Body.setPosition(body, {
-      x: body.position.x,
-      y: Math.min(nextY, FLOOR_Y - 28),
-    });
-
-    if (body.plugin?.moveOriginY !== undefined) {
-      body.plugin.moveOriginY =
-        anchorY + (body.plugin.moveOriginY - anchorY) * scale;
-    }
-
-    if (body.plugin?.wrapMinY !== undefined) {
-      body.plugin.wrapMinY =
-        anchorY + (body.plugin.wrapMinY - anchorY) * scale;
-    }
-
-    if (body.plugin?.wrapMaxY !== undefined) {
-      body.plugin.wrapMaxY =
-        anchorY + (body.plugin.wrapMaxY - anchorY) * scale;
-    }
-  }
-}
-
-function makeReferenceStage4() {
-  const bodies: ObstacleBody[] = [];
-
-  // Wide upper funnels feed the four spinning paddles.
-  bodies.push(
-    makeWall(235, 330, 430, 28, {
-      angle: 0.31,
-      render: { fillStyle: "#64748b", strokeStyle: "#1e293b", lineWidth: 3 },
-    }),
-    makeWall(865, 330, 430, 28, {
-      angle: -0.31,
-      render: { fillStyle: "#64748b", strokeStyle: "#1e293b", lineWidth: 3 },
-    }),
-  );
-
-  const paddleXs = [270, 460, 640, 830];
-  paddleXs.forEach((x, index) => {
-    const speed = index < 2 ? 0.095 : -0.095;
-    const paddle = makeSpinner(x, 535, 190, speed);
-    paddle.render.fillStyle = "#9ca3af";
-    paddle.render.strokeStyle = "#374151";
-    Body.setAngle(paddle, index % 2 === 0 ? -1.2 : 1.2);
-    bodies.push(paddle);
+function makeMovingWall(
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  amplitude: number,
+  speed: number,
+) {
+  const body = makeWall(x, y, width, height, {
+    render: { fillStyle: "#94a3b8", strokeStyle: "#334155", lineWidth: 3 },
   });
 
-  // Curved-bowl feel made from angled rails, with safe exits at both sides.
+  body.plugin = {
+    kind: "stage",
+    moveAxis: "x",
+    moveOriginX: x,
+    moveOriginY: y,
+    moveAmplitude: amplitude,
+    moveSpeed: speed,
+    movePhase: 0,
+  };
+
+  return body;
+}
+
+function makeBaseStage() {
+  const bodies: ObstacleBody[] = [];
+  const leftWall = makeWall(18, HEIGHT / 2, 36, HEIGHT);
+  const rightWall = makeWall(WIDTH - 18, HEIGHT / 2, 36, HEIGHT);
+  const ceiling = makeWall(WIDTH / 2, 16, WIDTH, 32);
+  const floor = makeWall(WIDTH / 2, FLOOR_Y + 22, WIDTH, 44, {
+    render: { fillStyle: "#111827", strokeStyle: "#111827", lineWidth: 1 },
+  });
+  floor.plugin = { kind: "floor" };
+
+  const gate = makeWall(WIDTH / 2, START_Y + START_HEIGHT, WIDTH - 72, 24, {
+    render: { fillStyle: "#3b82f6", strokeStyle: "#172554", lineWidth: 3 },
+  });
+  gate.label = "start-gate";
+
+  bodies.push(leftWall, rightWall, ceiling, floor, gate);
+  return bodies;
+}
+
+function buildPaddleBowl() {
+  const bodies = makeBaseStage();
+  bodies.push(
+    makeWall(235, 330, 430, 28, { angle: 0.31 }),
+    makeWall(865, 330, 430, 28, { angle: -0.31 }),
+  );
+
+  [270, 460, 640, 830].forEach((x, index) => {
+    const spinner = makeSpinner(
+      x,
+      530,
+      190,
+      index < 2 ? 0.085 : -0.085,
+      "#a3a3a3",
+    );
+    Body.setAngle(spinner, index % 2 === 0 ? -1.15 : 1.15);
+    bodies.push(spinner);
+  });
+
   bodies.push(
     makeWall(185, 625, 255, 22, { angle: 0.2 }),
     makeWall(390, 650, 180, 22, { angle: -0.16 }),
     makeWall(710, 650, 180, 22, { angle: 0.16 }),
     makeWall(915, 625, 255, 22, { angle: -0.2 }),
-    makeGreenFinish(130, 730, 155, 40),
-    makeGreenFinish(970, 730, 155, 40),
-    makeRedReset(550, 708, 150, 34),
+    makeGreenFinish(145, 744, 220, 42),
+    makeRedReset(550, 727, 175, 34),
+    makeGreenFinish(955, 744, 220, 42),
   );
 
   return bodies;
 }
 
-function makeReferenceStage8() {
-  const bodies: ObstacleBody[] = [];
-
-  // A broad bowl keeps the pack circulating without covering the exits.
+function buildRisingResets() {
+  const bodies = makeBaseStage();
   bodies.push(
     makeWall(185, 395, 390, 30, { angle: 0.37 }),
     makeWall(915, 395, 390, 30, { angle: -0.37 }),
@@ -617,50 +273,20 @@ function makeReferenceStage8() {
     makeWall(790, 600, 360, 26, { angle: -0.16 }),
     makeWall(550, 500, 300, 34, { angle: 0.42 }),
     makeWall(550, 500, 300, 34, { angle: -0.42 }),
+    makeResetBall(390, 690, 510, 700, 2.1),
+    makeResetBall(710, 570, 510, 700, 2.1),
+    makeGreenFinish(550, 746, 220, 42),
   );
-
-  const leftReset = makeCircleZone("red-reset", 390, 690, 29);
-  leftReset.plugin = {
-    ...leftReset.plugin,
-    wrapVertical: true,
-    wrapMinY: 520,
-    wrapMaxY: 700,
-    wrapSpeed: 2.15,
-  };
-
-  const rightReset = makeCircleZone("red-reset", 710, 690, 29);
-  rightReset.plugin = {
-    ...rightReset.plugin,
-    wrapVertical: true,
-    wrapMinY: 520,
-    wrapMaxY: 700,
-    wrapSpeed: 2.15,
-  };
-
-  bodies.push(
-    leftReset,
-    rightReset,
-    makeGreenFinish(550, 735, 160, 42),
-    makeWall(265, 705, 320, 24, { angle: 0.1 }),
-    makeWall(835, 705, 320, 24, { angle: -0.1 }),
-  );
-
   return bodies;
 }
 
-function makeReferenceStage9() {
-  const bodies: ObstacleBody[] = [];
-
-  // Inward side wedges and lower pyramids create three deliberate exits.
+function buildMovingBridge() {
+  const bodies = makeBaseStage();
   bodies.push(
     makeWall(145, 385, 310, 42, { angle: 0.48 }),
     makeWall(955, 385, 310, 42, { angle: -0.48 }),
     makeWall(320, 650, 300, 38, { angle: -0.58 }),
     makeWall(780, 650, 300, 38, { angle: 0.58 }),
-  );
-
-  // Center cap resembling the light-gray moving blocker from the example.
-  bodies.push(
     makeWall(550, 455, 280, 24, {
       render: { fillStyle: "#9ca3af", strokeStyle: "#374151", lineWidth: 3 },
     }),
@@ -672,1037 +298,52 @@ function makeReferenceStage9() {
       angle: 0.62,
       render: { fillStyle: "#9ca3af", strokeStyle: "#374151", lineWidth: 3 },
     }),
+    makeMovingWall(550, 575, 255, 22, 205, 0.0032),
+    makeGreenFinish(145, 745, 220, 42),
+    makeRedReset(550, 730, 210, 42),
+    makeGreenFinish(955, 745, 220, 42),
   );
-
-  const movingBridge = makeWall(550, 575, 255, 22, {
-    render: { fillStyle: "#cbd5e1", strokeStyle: "#475569", lineWidth: 3 },
-  });
-  movingBridge.plugin = {
-    ...movingBridge.plugin,
-    obstacleKind: "stage",
-    moveAxis: "x",
-    moveOriginX: 550,
-    moveOriginY: 575,
-    moveAmplitude: 205,
-    moveSpeed: 0.0032,
-    movePhase: 0,
-  };
-
-  bodies.push(
-    movingBridge,
-    makeGreenFinish(145, 735, 180, 42),
-    makeRedReset(550, 730, 190, 42),
-    makeGreenFinish(955, 735, 180, 42),
-  );
-
   return bodies;
 }
 
-function enableGentleZoneMotion(
-  bodies: ObstacleBody[],
-  variant: number,
-) {
-  const outcomeZones = bodies.filter(
-    (body) =>
-      (body.plugin?.obstacleKind === "green-finish" ||
-        body.plugin?.obstacleKind === "red-reset") &&
-      !body.plugin?.floorZone &&
-      !body.plugin?.wrapVertical &&
-      body.position.y < FLOOR_Y - 165,
+const LEVELS: LevelDefinition[] = [
+  {
+    id: "paddle-bowl",
+    name: "Paddle Bowl",
+    description: "Four fast paddles feed a lower bowl with two green exits.",
+    build: buildPaddleBowl,
+  },
+  {
+    id: "rising-resets",
+    name: "Rising Resets",
+    description: "Two red reset balls circulate through a broad obstacle bowl.",
+    build: buildRisingResets,
+  },
+  {
+    id: "moving-bridge",
+    name: "Moving Bridge",
+    description: "A moving center bridge splits the course between three exits.",
+    build: buildMovingBridge,
+  },
+];
+
+function makeSpawnPositions(count: number) {
+  const columns = Math.max(
+    1,
+    Math.floor((START_WIDTH - 80) / (MARBLE_RADIUS * 2 + 14)),
   );
+  const positions: Array<{ x: number; y: number }> = [];
 
-  const processed = new Set<number>();
-  const baseAmplitude = 14 + (variant % 3) * 5;
-  const baseSpeed = 0.0009 + (variant % 4) * 0.00012;
-
-  for (const body of outcomeZones) {
-    if (processed.has(body.id)) continue;
-
-    const mirroredPartner = outcomeZones.find(
-      (candidate) =>
-        candidate.id !== body.id &&
-        !processed.has(candidate.id) &&
-        candidate.plugin?.obstacleKind === body.plugin?.obstacleKind &&
-        areMirroredBodies(body, candidate, 14),
-    );
-
-    const isCenterBody = Math.abs(body.position.x - WIDTH / 2) < 18;
-
-    if (mirroredPartner) {
-      const left =
-        body.position.x <= mirroredPartner.position.x ? body : mirroredPartner;
-      const right = left.id === body.id ? mirroredPartner : body;
-
-      const axis: "x" | "y" = variant % 3 === 0 ? "y" : "x";
-      const sharedPhase = variant * 0.37;
-
-      left.plugin = {
-        ...left.plugin,
-        moveAxis: axis,
-        moveOriginX: left.position.x,
-        moveOriginY: left.position.y,
-        moveAmplitude: baseAmplitude,
-        moveSpeed: baseSpeed,
-        movePhase: sharedPhase,
-      };
-
-      right.plugin = {
-        ...right.plugin,
-        moveAxis: axis,
-        moveOriginX: right.position.x,
-        moveOriginY: right.position.y,
-        moveAmplitude: axis === "x" ? -baseAmplitude : baseAmplitude,
-        moveSpeed: baseSpeed,
-        movePhase: sharedPhase,
-      };
-
-      processed.add(left.id);
-      processed.add(right.id);
-      continue;
-    }
-
-    // A lone centered zone may move vertically, preserving mirror symmetry.
-    if (isCenterBody && !body.plugin?.floorZone) {
-      body.plugin = {
-        ...body.plugin,
-        moveAxis: "y",
-        moveOriginX: body.position.x,
-        moveOriginY: body.position.y,
-        moveAmplitude: 12,
-        moveSpeed: baseSpeed,
-        movePhase: variant * 0.37,
-      };
-    }
-
-    processed.add(body.id);
-  }
-}
-
-function addBottomOutcomeCoverage(
-  bodies: ObstacleBody[],
-  variant: number,
-) {
-  const bottomZones = bodies
-    .filter(
-      (body) =>
-        body.isSensor &&
-        (body.plugin?.obstacleKind === "green-finish" ||
-          body.plugin?.obstacleKind === "red-reset") &&
-        body.position.y >= 575,
-    )
-    .map((body) => ({
-      min: Math.max(36, body.bounds.min.x - 8),
-      max: Math.min(WIDTH - 36, body.bounds.max.x + 8),
-    }))
-    .sort((a, b) => a.min - b.min);
-
-  const merged: Array<{ min: number; max: number }> = [];
-  for (const zone of bottomZones) {
-    const previous = merged[merged.length - 1];
-    if (!previous || zone.min > previous.max + 4) {
-      merged.push({ ...zone });
-    } else {
-      previous.max = Math.max(previous.max, zone.max);
-    }
-  }
-
-  let cursor = 36;
-  let gapIndex = 0;
-
-  const addGapZone = (start: number, end: number) => {
-    const width = end - start;
-    if (width < 22) return;
-
-    const zone = makeRedReset(
-      start + width / 2,
-      707 - (gapIndex % 2) * 5,
-      Math.max(24, width + 4),
-      28,
-    );
-    Body.setAngle(zone, (gapIndex % 2 === 0 ? 1 : -1) * 0.055);
-    bodies.push(zone);
-    gapIndex += 1;
-  };
-
-  for (const interval of merged) {
-    if (interval.min > cursor) addGapZone(cursor, interval.min);
-    cursor = Math.max(cursor, interval.max);
-  }
-
-  if (cursor < WIDTH - 36) {
-    addGapZone(cursor, WIDTH - 36);
-  }
-
-  // Sloped guide rails keep the lowest part of the board from acting like
-  // a flat waiting room. Every rail points toward an outcome sensor.
-  const guideColor = {
-    fillStyle: "#94a3b8",
-    strokeStyle: "#334155",
-    lineWidth: 2,
-  };
-
-  bodies.push(
-    makeWall(155, 674, 250, 18, {
-      angle: 0.11,
-      render: guideColor,
-    }),
-    makeWall(405, 686, 235, 18, {
-      angle: -0.09,
-      render: guideColor,
-    }),
-    makeWall(695, 686, 235, 18, {
-      angle: 0.09,
-      render: guideColor,
-    }),
-    makeWall(945, 674, 250, 18, {
-      angle: -0.11,
-      render: guideColor,
-    }),
-  );
-}
-
-function makeSpinner(x: number, y: number, length: number, speed: number) {
-  const body = Bodies.rectangle(x, y, length, 17, {
-    isStatic: true,
-    friction: 0,
-    restitution: 1,
-    collisionFilter: { category: CATEGORY_STAGE },
-    render: {
-      fillStyle: "#fbbf24",
-      strokeStyle: "#713f12",
-      lineWidth: 2,
-    },
-  }) as ObstacleBody;
-  body.plugin = { obstacleKind: "stage", rotateSpeed: speed };
-  return body;
-}
-
-function makePeg(x: number, y: number, radius = 11) {
-  return Bodies.circle(x, y, radius, {
-    isStatic: true,
-    restitution: 1.08,
-    friction: 0,
-    collisionFilter: { category: CATEGORY_STAGE },
-    render: {
-      fillStyle: "#8b5cf6",
-      strokeStyle: "#312e81",
-      lineWidth: 2,
-    },
-  }) as ObstacleBody;
-}
-
-function makeBumper(x: number, y: number, radius = 26) {
-  const body = Bodies.circle(x, y, radius, {
-    isStatic: true,
-    friction: 0,
-    restitution: 1.35,
-    collisionFilter: { category: CATEGORY_STAGE },
-    render: {
-      fillStyle: "#ec4899",
-      strokeStyle: "#831843",
-      lineWidth: 4,
-    },
-  }) as ObstacleBody;
-  body.plugin = { obstacleKind: "stage" };
-  return body;
-}
-
-function makeCornerGuard(x: number, y: number, radius = CORNER_GUARD_RADIUS) {
-  const body = Bodies.circle(x, y, radius, {
-    isStatic: true,
-    friction: 0,
-    restitution: 1.02,
-    collisionFilter: { category: CATEGORY_STAGE },
-    render: {
-      fillStyle: "#cbd5e1",
-      strokeStyle: "#334155",
-      lineWidth: 2,
-    },
-  }) as ObstacleBody;
-
-  body.plugin = { obstacleKind: "corner-guard" };
-  return body;
-}
-
-function addRoundedWallEnds(bodies: ObstacleBody[]) {
-  const guards: ObstacleBody[] = [];
-  const requiredClearance = MARBLE_RADIUS * 2 + 18;
-
-  const distanceToBodyBounds = (
-    x: number,
-    y: number,
-    body: Matter.Body,
-  ) => {
-    const closestX = Math.max(body.bounds.min.x, Math.min(x, body.bounds.max.x));
-    const closestY = Math.max(body.bounds.min.y, Math.min(y, body.bounds.max.y));
-    return Math.hypot(x - closestX, y - closestY);
-  };
-
-  for (const body of bodies) {
-    if (
-      !body.isStatic ||
-      body.isSensor ||
-      body.plugin?.obstacleKind === "corner-guard" ||
-      body.label === "start-gate"
-    ) {
-      continue;
-    }
-
-    const boundsWidth = body.bounds.max.x - body.bounds.min.x;
-    const boundsHeight = body.bounds.max.y - body.bounds.min.y;
-    const longSide = Math.max(boundsWidth, boundsHeight);
-    const shortSide = Math.min(boundsWidth, boundsHeight);
-
-    if (longSide < 170 || shortSide > 38) continue;
-    if (body.position.y >= FLOOR_Y - 48) continue;
-    if (body.position.y <= START_Y + START_HEIGHT + 16) continue;
-
-    const halfLength = longSide / 2 - 6;
-    const cos = Math.cos(body.angle);
-    const sin = Math.sin(body.angle);
-
-    const endpoints = [
-      {
-        x: body.position.x - cos * halfLength,
-        y: body.position.y - sin * halfLength,
-      },
-      {
-        x: body.position.x + cos * halfLength,
-        y: body.position.y + sin * halfLength,
-      },
-    ];
-
-    for (const endpoint of endpoints) {
-      if (
-        endpoint.x < 54 ||
-        endpoint.x > WIDTH - 54 ||
-        endpoint.y < START_Y + START_HEIGHT + 34 ||
-        endpoint.y > FLOOR_Y - 58
-      ) {
-        continue;
-      }
-
-      // Never place a guard where it would narrow a route below marble width.
-      const nearAnotherObstacle = bodies.some((other) => {
-        if (
-          other.id === body.id ||
-          other.isSensor ||
-          other.label === "start-gate" ||
-          other.plugin?.obstacleKind === "corner-guard"
-        ) {
-          return false;
-        }
-
-        return (
-          distanceToBodyBounds(endpoint.x, endpoint.y, other) <
-          requiredClearance
-        );
-      });
-
-      const nearAnotherGuard = guards.some(
-        (guard) =>
-          Math.hypot(
-            guard.position.x - endpoint.x,
-            guard.position.y - endpoint.y,
-          ) <
-          requiredClearance,
-      );
-
-      if (!nearAnotherObstacle && !nearAnotherGuard) {
-        guards.push(makeCornerGuard(endpoint.x, endpoint.y));
-      }
-    }
-  }
-
-  bodies.push(...guards);
-}
-
-function removeUnsafeCornerGuards(bodies: ObstacleBody[]) {
-  const requiredGap = MARBLE_RADIUS * 2 + 14;
-
-  const stageBodies = bodies.filter(
-    (body) =>
-      !body.isSensor &&
-      body.plugin?.obstacleKind !== "corner-guard" &&
-      body.label !== "start-gate",
-  );
-
-  return bodies.filter((body) => {
-    if (body.plugin?.obstacleKind !== "corner-guard") return true;
-
-    return !stageBodies.some((other) => {
-      const closestX = Math.max(
-        other.bounds.min.x,
-        Math.min(body.position.x, other.bounds.max.x),
-      );
-      const closestY = Math.max(
-        other.bounds.min.y,
-        Math.min(body.position.y, other.bounds.max.y),
-      );
-
-      const distance = Math.hypot(
-        body.position.x - closestX,
-        body.position.y - closestY,
-      );
-
-      return distance < requiredGap;
+  for (let index = 0; index < count; index += 1) {
+    const column = index % columns;
+    const row = Math.floor(index / columns);
+    positions.push({
+      x: START_X + 55 + column * (MARBLE_RADIUS * 2 + 14),
+      y: START_Y + 48 + row * (MARBLE_RADIUS * 2 + 12),
     });
-  });
-}
-
-function ensureCentralDropClearance(bodies: ObstacleBody[]) {
-  const chuteHalfWidth = MARBLE_RADIUS + 20;
-  const chuteMinX = WIDTH / 2 - chuteHalfWidth;
-  const chuteMaxX = WIDTH / 2 + chuteHalfWidth;
-  const chuteTop = START_Y + START_HEIGHT + 26;
-  const chuteBottom = FLOOR_Y - 44;
-
-  const protectedBodies = new Set<number>();
-
-  for (const body of bodies) {
-    if (
-      body.isSensor ||
-      body.label === "start-gate" ||
-      body.plugin?.obstacleKind === "corner-guard"
-    ) {
-      continue;
-    }
-
-    const bodyWidth = body.bounds.max.x - body.bounds.min.x;
-    const bodyHeight = body.bounds.max.y - body.bounds.min.y;
-
-    const intersectsCenterChute =
-      body.bounds.max.x > chuteMinX &&
-      body.bounds.min.x < chuteMaxX &&
-      body.bounds.max.y > chuteTop &&
-      body.bounds.min.y < chuteBottom;
-
-    const isSpinner =
-      body.plugin?.rotateSpeed !== undefined &&
-      Math.abs(body.plugin.rotateSpeed) > 0;
-
-    const isSmallCenterObject =
-      bodyWidth <= MARBLE_RADIUS * 2.4 &&
-      bodyHeight <= MARBLE_RADIUS * 2.4;
-
-    // Keep center spinners and small bumpers because they can move marbles
-    // through. Remove static rails, walls, and large shapes that seal the chute.
-    if (intersectsCenterChute && !isSpinner && !isSmallCenterObject) {
-      protectedBodies.add(body.id);
-    }
   }
 
-  for (let index = bodies.length - 1; index >= 0; index -= 1) {
-    if (protectedBodies.has(bodies[index].id)) {
-      bodies.splice(index, 1);
-    }
-  }
-
-  // Also remove pairs whose combined bounds form a bridge across the center.
-  const solids = bodies.filter(
-    (body) =>
-      !body.isSensor &&
-      body.label !== "start-gate" &&
-      body.plugin?.obstacleKind !== "corner-guard" &&
-      body.plugin?.rotateSpeed === undefined,
-  );
-
-  const toRemove = new Set<number>();
-
-  for (let i = 0; i < solids.length; i += 1) {
-    for (let j = i + 1; j < solids.length; j += 1) {
-      const a = solids[i];
-      const b = solids[j];
-
-      const sameBand =
-        Math.abs(a.position.y - b.position.y) < MARBLE_RADIUS * 2.5;
-
-      if (!sameBand) continue;
-
-      const combinedMinX = Math.min(a.bounds.min.x, b.bounds.min.x);
-      const combinedMaxX = Math.max(a.bounds.max.x, b.bounds.max.x);
-      const overlapAcrossCenter =
-        combinedMinX < chuteMinX &&
-        combinedMaxX > chuteMaxX &&
-        Math.min(a.bounds.max.x, b.bounds.max.x) >
-          Math.max(a.bounds.min.x, b.bounds.min.x);
-
-      if (!overlapAcrossCenter) continue;
-
-      const removeA =
-        Math.abs(a.position.x - WIDTH / 2) <
-        Math.abs(b.position.x - WIDTH / 2);
-
-      toRemove.add(removeA ? a.id : b.id);
-    }
-  }
-
-  for (let index = bodies.length - 1; index >= 0; index -= 1) {
-    if (toRemove.has(bodies[index].id)) {
-      bodies.splice(index, 1);
-    }
-  }
-
-  // Add subtle mirrored guide rails outside the protected center chute.
-  const guideY = FLOOR_Y - 120;
-  const guideLength = 250;
-  const guideColor = {
-    fillStyle: "#cbd5e1",
-    strokeStyle: "#475569",
-    lineWidth: 2,
-  };
-
-  const leftGuide = makeWall(WIDTH / 2 - 205, guideY, guideLength, 18, {
-    angle: 0.12,
-    render: guideColor,
-  });
-  const rightGuide = makeWall(WIDTH / 2 + 205, guideY, guideLength, 18, {
-    angle: -0.12,
-    render: guideColor,
-  });
-
-  // Only add the guides when they do not overlap existing outcome zones.
-  const safeToAdd = (candidate: Matter.Body) =>
-    !bodies.some(
-      (body) =>
-        body.isSensor &&
-        candidate.bounds.max.x > body.bounds.min.x &&
-        candidate.bounds.min.x < body.bounds.max.x &&
-        candidate.bounds.max.y > body.bounds.min.y - 18 &&
-        candidate.bounds.min.y < body.bounds.max.y + 18,
-    );
-
-  if (safeToAdd(leftGuide)) bodies.push(leftGuide);
-  if (safeToAdd(rightGuide)) bodies.push(rightGuide);
-}
-
-function synchronizeMirroredMotion(bodies: ObstacleBody[]) {
-  const processed = new Set<number>();
-
-  for (const body of bodies) {
-    if (processed.has(body.id)) continue;
-
-    const partner = bodies.find(
-      (candidate) =>
-        candidate.id !== body.id &&
-        !processed.has(candidate.id) &&
-        candidate.plugin?.obstacleKind === body.plugin?.obstacleKind &&
-        areMirroredBodies(body, candidate, 12),
-    );
-
-    if (!partner) continue;
-
-    const left = body.position.x <= partner.position.x ? body : partner;
-    const right = left.id === body.id ? partner : body;
-
-    if (
-      left.plugin?.moveAxis &&
-      left.plugin.moveAmplitude !== undefined &&
-      left.plugin.moveSpeed !== undefined
-    ) {
-      right.plugin = {
-        ...right.plugin,
-        moveAxis: left.plugin.moveAxis,
-        moveOriginX: right.position.x,
-        moveOriginY: right.position.y,
-        moveAmplitude:
-          left.plugin.moveAxis === "x"
-            ? -Math.abs(left.plugin.moveAmplitude)
-            : left.plugin.moveAmplitude,
-        moveSpeed: left.plugin.moveSpeed,
-        movePhase: left.plugin.movePhase ?? 0,
-      };
-
-      left.plugin.moveAmplitude =
-        left.plugin.moveAxis === "x"
-          ? Math.abs(left.plugin.moveAmplitude)
-          : left.plugin.moveAmplitude;
-    }
-
-    if (
-      left.plugin?.wrapVertical &&
-      left.plugin.wrapMinY !== undefined &&
-      left.plugin.wrapMaxY !== undefined &&
-      left.plugin.wrapSpeed !== undefined
-    ) {
-      right.plugin = {
-        ...right.plugin,
-        wrapVertical: true,
-        wrapMinY: left.plugin.wrapMinY,
-        wrapMaxY: left.plugin.wrapMaxY,
-        wrapSpeed: left.plugin.wrapSpeed,
-      };
-    }
-
-    processed.add(left.id);
-    processed.add(right.id);
-  }
-}
-
-function makeHammer(x: number, y: number, length = 260, speed = 0.045) {
-  const arm = Bodies.rectangle(x, y, length, 22, {
-    isStatic: true,
-    friction: 0,
-    restitution: 1.08,
-    collisionFilter: { category: CATEGORY_STAGE },
-    render: {
-      fillStyle: "#fb7185",
-      strokeStyle: "#881337",
-      lineWidth: 3,
-    },
-  }) as ObstacleBody;
-  arm.plugin = { obstacleKind: "stage", rotateSpeed: speed };
-  return arm;
-}
-
-function makeFunnel(
-  centerX: number,
-  topY: number,
-  topWidth = 760,
-  bottomWidth = 170,
-  height = 190,
-) {
-  const leftX = centerX - (topWidth + bottomWidth) / 4;
-  const rightX = centerX + (topWidth + bottomWidth) / 4;
-  const angle = Math.atan2(height, (topWidth - bottomWidth) / 2);
-  const wallLength = Math.hypot(height, (topWidth - bottomWidth) / 2);
-
-  return [
-    makeWall(leftX, topY + height / 2, wallLength, 22, {
-      angle: angle,
-      render: { fillStyle: "#38bdf8", strokeStyle: "#0c4a6e", lineWidth: 3 },
-    }),
-    makeWall(rightX, topY + height / 2, wallLength, 22, {
-      angle: -angle,
-      render: { fillStyle: "#38bdf8", strokeStyle: "#0c4a6e", lineWidth: 3 },
-    }),
-  ];
-}
-
-
-function makeRotatingCross(
-  x: number,
-  y: number,
-  length = 260,
-  speed = 0.04,
-) {
-  const horizontal = makeSpinner(x, y, length, speed);
-  const vertical = makeSpinner(x, y, length, speed);
-  Body.setAngle(vertical, Math.PI / 2);
-  horizontal.render.fillStyle = "#a78bfa";
-  horizontal.render.strokeStyle = "#4c1d95";
-  vertical.render.fillStyle = "#a78bfa";
-  vertical.render.strokeStyle = "#4c1d95";
-  return [horizontal, vertical];
-}
-
-function makeZigZagWalls() {
-  return [
-    makeWall(275, 325, 430, 20, {
-      angle: 0.12,
-      render: { fillStyle: "#34d399", strokeStyle: "#064e3b", lineWidth: 3 },
-    }),
-    makeWall(825, 415, 430, 20, {
-      angle: -0.12,
-      render: { fillStyle: "#34d399", strokeStyle: "#064e3b", lineWidth: 3 },
-    }),
-    makeWall(275, 505, 430, 20, {
-      angle: 0.12,
-      render: { fillStyle: "#34d399", strokeStyle: "#064e3b", lineWidth: 3 },
-    }),
-    makeWall(825, 595, 430, 20, {
-      angle: -0.12,
-      render: { fillStyle: "#34d399", strokeStyle: "#064e3b", lineWidth: 3 },
-    }),
-  ];
-}
-
-function makeSplitPath() {
-  return [
-    makeWall(550, 365, 26, 220, {
-      angle: 0.45,
-      render: { fillStyle: "#fb923c", strokeStyle: "#7c2d12", lineWidth: 3 },
-    }),
-    makeWall(550, 365, 26, 220, {
-      angle: -0.45,
-      render: { fillStyle: "#fb923c", strokeStyle: "#7c2d12", lineWidth: 3 },
-    }),
-    makeWall(360, 510, 300, 20, {
-      angle: -0.1,
-      render: { fillStyle: "#fb923c", strokeStyle: "#7c2d12", lineWidth: 3 },
-    }),
-    makeWall(740, 510, 300, 20, {
-      angle: 0.1,
-      render: { fillStyle: "#fb923c", strokeStyle: "#7c2d12", lineWidth: 3 },
-    }),
-  ];
-}
-
-
-function makeDiamondMaze() {
-  const pieces: ObstacleBody[] = [];
-  const centers = [
-    [300, 370],
-    [550, 450],
-    [800, 370],
-  ];
-
-  centers.forEach(([x, y], index) => {
-    const size = index === 1 ? 170 : 145;
-    pieces.push(
-      makeWall(x, y - size / 2, size, 18, {
-        angle: Math.PI / 4,
-        render: { fillStyle: "#22d3ee", strokeStyle: "#164e63", lineWidth: 3 },
-      }),
-      makeWall(x + size / 2, y, size, 18, {
-        angle: -Math.PI / 4,
-        render: { fillStyle: "#22d3ee", strokeStyle: "#164e63", lineWidth: 3 },
-      }),
-      makeWall(x, y + size / 2, size, 18, {
-        angle: Math.PI / 4,
-        render: { fillStyle: "#22d3ee", strokeStyle: "#164e63", lineWidth: 3 },
-      }),
-      makeWall(x - size / 2, y, size, 18, {
-        angle: -Math.PI / 4,
-        render: { fillStyle: "#22d3ee", strokeStyle: "#164e63", lineWidth: 3 },
-      }),
-    );
-  });
-
-  return pieces;
-}
-
-function makeSpinnerTunnel() {
-  return [
-    makeWall(155, 380, 250, 18, {
-      angle: 0.12,
-      render: { fillStyle: "#fde047", strokeStyle: "#713f12", lineWidth: 3 },
-    }),
-    makeWall(945, 380, 250, 18, {
-      angle: -0.12,
-      render: { fillStyle: "#fde047", strokeStyle: "#713f12", lineWidth: 3 },
-    }),
-    makeSpinner(280, 430, 190, 0.065),
-    makeSpinner(550, 500, 230, -0.058),
-    makeSpinner(820, 430, 190, 0.065),
-    makeWall(250, 595, 300, 18, {
-      angle: 0.14,
-      render: { fillStyle: "#fde047", strokeStyle: "#713f12", lineWidth: 3 },
-    }),
-    makeWall(850, 595, 300, 18, {
-      angle: -0.14,
-      render: { fillStyle: "#fde047", strokeStyle: "#713f12", lineWidth: 3 },
-    }),
-  ];
-}
-
-function reduceRedAtChokePoints(bodies: ObstacleBody[]) {
-  const redZones = bodies.filter(
-    (body) => body.plugin?.obstacleKind === "red-reset",
-  );
-  const greenZones = bodies.filter(
-    (body) => body.plugin?.obstacleKind === "green-finish",
-  );
-
-  // Never let a red zone sit directly below the full-width spawn opening.
-  for (let index = bodies.length - 1; index >= 0; index -= 1) {
-    const body = bodies[index];
-    if (body.plugin?.obstacleKind !== "red-reset") continue;
-
-    const width = body.bounds.max.x - body.bounds.min.x;
-    const blocksCenter =
-      body.bounds.min.x < WIDTH / 2 + MARBLE_RADIUS * 1.8 &&
-      body.bounds.max.x > WIDTH / 2 - MARBLE_RADIUS * 1.8;
-
-    const nearUpperChoke =
-      body.position.y < START_Y + START_HEIGHT + 150;
-
-    if (blocksCenter && nearUpperChoke) {
-      bodies.splice(index, 1);
-    } else if (!body.plugin?.floorZone && width > 165) {
-      // Elevated red hazards should be targets, not entire hallways.
-      Body.scale(body, 0.72, 0.82);
-    }
-  }
-
-  // If the lower course contains more red width than green width, remove the
-  // most central red zones until green is at least equally reachable.
-  const floorRed = bodies
-    .filter(
-      (body) =>
-        body.plugin?.obstacleKind === "red-reset" &&
-        (body.plugin?.floorZone || body.position.y > FLOOR_Y - 150),
-    )
-    .sort(
-      (a, b) =>
-        Math.abs(a.position.x - WIDTH / 2) -
-        Math.abs(b.position.x - WIDTH / 2),
-    );
-
-  const floorGreen = bodies.filter(
-    (body) =>
-      body.plugin?.obstacleKind === "green-finish" &&
-      (body.plugin?.floorZone || body.position.y > FLOOR_Y - 150),
-  );
-
-  const totalWidth = (items: ObstacleBody[]) =>
-    items.reduce(
-      (sum, body) => sum + (body.bounds.max.x - body.bounds.min.x),
-      0,
-    );
-
-  let redWidth = totalWidth(floorRed);
-  const greenWidth = totalWidth(floorGreen);
-
-  for (const red of floorRed) {
-    if (redWidth <= greenWidth * 0.85 || floorRed.length <= 1) break;
-    const index = bodies.findIndex((body) => body.id === red.id);
-    if (index >= 0) {
-      redWidth -= red.bounds.max.x - red.bounds.min.x;
-      bodies.splice(index, 1);
-    }
-  }
-
-  // Guarantee at least one broad green floor destination.
-  const remainingGreen = bodies.filter(
-    (body) => body.plugin?.obstacleKind === "green-finish",
-  );
-
-  if (remainingGreen.length === 0) {
-    bodies.push(makeGreenFinish(WIDTH / 2, FLOOR_Y - 7, 230, 38));
-  }
-}
-
-function makeStageLayout(round: number) {
-  const bodies: ObstacleBody[] = [];
-
-  // Outer side walls and permanent floor.
-  bodies.push(makeWall(18, HEIGHT / 2, 36, HEIGHT));
-  bodies.push(makeWall(WIDTH - 18, HEIGHT / 2, 36, HEIGHT));
-  bodies.push(
-    makeWall(WIDTH / 2, FLOOR_Y + 22, WIDTH, 44, {
-      render: { fillStyle: "#111827" },
-    }),
-  );
-
-  // The spawn chamber fills the whole top portion of the arena. The outer
-  // side walls continue to the top, and this north wall closes the ceiling.
-  bodies.push(
-    makeWall(WIDTH / 2, 16, WIDTH, 32, {
-      render: {
-        fillStyle: "#d7dbe4",
-        strokeStyle: "#111827",
-        lineWidth: 2,
-      },
-    }),
-  );
-
-  const gate = makeWall(
-    WIDTH / 2,
-    START_Y + START_HEIGHT,
-    WIDTH - 72,
-    24,
-    { render: { fillStyle: "#3b82f6", strokeStyle: "#172554", lineWidth: 3 } },
-  );
-  gate.label = "start-gate";
-  bodies.push(gate);
-
-  // Every round chooses a random stage family. Immediate repeats are prevented.\n  // Courses may contain several green exits and several red reset hazards.
-  const variant = getRandomStageVariant();
-
-  if (variant === 0) {
-    for (let row = 0; row < 5; row += 1) {
-      for (let col = 0; col < 8; col += 1) {
-        const offset = row % 2 ? 48 : 0;
-        bodies.push(makePeg(145 + col * 115 + offset, 285 + row * 72));
-      }
-    }
-    bodies.push(makeSpinner(285, 590, 210, 0.035));
-    bodies.push(makeSpinner(815, 590, 210, -0.04));
-    bodies.push(makeRedReset(365, 575, 105, 24));
-    bodies.push(makeRedReset(735, 575, 105, 24));
-    bodies.push(makeGreenFinish(305, 690, 170, 42));
-    bodies.push(makeGreenFinish(550, 690, 150, 42));
-    bodies.push(makeGreenFinish(795, 690, 170, 42));
-  } else if (variant === 1) {
-    bodies.push(makeWall(250, 345, 380, 24, { angle: 0.18 }));
-    bodies.push(makeWall(850, 345, 380, 24, { angle: -0.18 }));
-    bodies.push(makeSpinner(550, 430, 300, 0.045));
-    bodies.push(makeSpinner(310, 565, 210, -0.055));
-    bodies.push(makeSpinner(790, 565, 210, 0.055));
-    bodies.push(makeRedReset(300, 535, 125, 24));
-    bodies.push(makeRedReset(800, 535, 125, 24));
-    bodies.push(makeGreenFinish(380, 690, 190, 42));
-    bodies.push(makeGreenFinish(720, 690, 190, 42));
-  } else if (variant === 2) {
-    bodies.push(makeWall(195, 335, 300, 22, { angle: 0.35 }));
-    bodies.push(makeWall(905, 335, 300, 22, { angle: -0.35 }));
-    bodies.push(makeWall(410, 475, 290, 20, { angle: -0.3 }));
-    bodies.push(makeWall(690, 475, 290, 20, { angle: 0.3 }));
-    for (let i = 0; i < 8; i += 1) {
-      bodies.push(makePeg(165 + i * 110, 590 + (i % 2) * 28, 14));
-    }
-    bodies.push(makeRedReset(180, 650, 150, 26));
-    bodies.push(makeRedReset(550, 615, 120, 24));
-    bodies.push(makeRedReset(920, 650, 150, 26));
-    bodies.push(makeGreenFinish(350, 690, 170, 42));
-    bodies.push(makeGreenFinish(750, 690, 170, 42));
-  } else if (variant === 3) {
-    bodies.push(makeSpinner(250, 330, 250, 0.06));
-    bodies.push(makeSpinner(550, 410, 330, -0.045));
-    bodies.push(makeSpinner(850, 330, 250, 0.06));
-    bodies.push(makeWall(250, 535, 330, 22, { angle: -0.22 }));
-    bodies.push(makeWall(850, 535, 330, 22, { angle: 0.22 }));
-    bodies.push(makeRedReset(270, 605, 120, 24));
-    bodies.push(makeRedReset(550, 585, 110, 24));
-    bodies.push(makeRedReset(830, 605, 120, 24));
-    bodies.push(makeGreenFinish(230, 690, 150, 42));
-    bodies.push(makeGreenFinish(550, 690, 150, 42));
-    bodies.push(makeGreenFinish(870, 690, 150, 42));
-  } else if (variant === 4) {
-    // PINBALL BUMPER FIELD: large high-bounce bumpers create pileups and ricochets.
-    const bumperPositions = [
-      [220, 330],
-      [430, 320],
-      [670, 320],
-      [880, 330],
-      [320, 455],
-      [550, 440],
-      [780, 455],
-      [220, 575],
-      [430, 565],
-      [670, 565],
-      [880, 575],
-    ];
-    bumperPositions.forEach(([x, y], index) =>
-      bodies.push(makeBumper(x, y, index === 5 ? 34 : 26)),
-    );
-    bodies.push(makeWall(175, 635, 280, 20, { angle: 0.17 }));
-    bodies.push(makeWall(925, 635, 280, 20, { angle: -0.17 }));
-    bodies.push(makeRedReset(350, 620, 105, 24));
-    bodies.push(makeRedReset(750, 620, 105, 24));
-    bodies.push(makeGreenFinish(235, 690, 150, 42));
-    bodies.push(makeGreenFinish(550, 690, 175, 42));
-    bodies.push(makeGreenFinish(865, 690, 150, 42));
-  } else if (variant === 5) {
-    // HAMMER GAUNTLET: three offset rotating hammer arms sweep across the lanes.
-    bodies.push(makeWall(170, 300, 250, 20, { angle: 0.16 }));
-    bodies.push(makeWall(930, 300, 250, 20, { angle: -0.16 }));
-    bodies.push(makeHammer(300, 390, 300, 0.05));
-    bodies.push(makeHammer(550, 485, 350, -0.042));
-    bodies.push(makeHammer(800, 390, 300, 0.055));
-    bodies.push(makePeg(550, 350, 18));
-    bodies.push(makeRedReset(160, 610, 150, 26));
-    bodies.push(makeRedReset(550, 600, 115, 24));
-    bodies.push(makeRedReset(940, 610, 150, 26));
-    bodies.push(makeGreenFinish(355, 690, 175, 42));
-    bodies.push(makeGreenFinish(745, 690, 175, 42));
-  } else if (variant === 6) {
-    // FUNNEL DROP: two broad funnels compress the pack before a final spinner.
-    bodies.push(...makeFunnel(550, 270, 880, 190, 175));
-    bodies.push(makeBumper(430, 475, 24));
-    bodies.push(makeBumper(670, 475, 24));
-    bodies.push(makeSpinner(550, 555, 300, round % 2 === 0 ? 0.048 : -0.048));
-    bodies.push(makeWall(235, 625, 330, 22, { angle: 0.16 }));
-    bodies.push(makeWall(865, 625, 330, 22, { angle: -0.16 }));
-    bodies.push(makeRedReset(430, 620, 90, 24));
-    bodies.push(makeRedReset(670, 620, 90, 24));
-    bodies.push(makeGreenFinish(250, 690, 160, 42));
-    bodies.push(makeGreenFinish(550, 690, 145, 42));
-    bodies.push(makeGreenFinish(850, 690, 160, 42));
-  } else if (variant === 7) {
-    // DOUBLE ROTATING CROSS: two large crosses sweep opposite directions.
-    bodies.push(...makeRotatingCross(330, 400, 280, 0.038));
-    bodies.push(...makeRotatingCross(770, 400, 280, -0.043));
-    bodies.push(makeBumper(550, 535, 36));
-    bodies.push(makeWall(250, 620, 330, 20, { angle: 0.16 }));
-    bodies.push(makeWall(850, 620, 330, 20, { angle: -0.16 }));
-    bodies.push(makeRedReset(290, 610, 105, 24));
-    bodies.push(makeRedReset(550, 575, 105, 24));
-    bodies.push(makeRedReset(810, 610, 105, 24));
-    bodies.push(makeGreenFinish(360, 690, 180, 42));
-    bodies.push(makeGreenFinish(740, 690, 180, 42));
-  } else if (variant === 8) {
-    // ZIG-ZAG RUN: alternating shelves create traffic jams and sudden drops.
-    bodies.push(...makeZigZagWalls());
-    bodies.push(makeBumper(180, 405, 22));
-    bodies.push(makeBumper(920, 495, 22));
-    bodies.push(makeSpinner(550, 635, 240, 0.05));
-    bodies.push(makeRedReset(165, 645, 140, 24));
-    bodies.push(makeRedReset(935, 645, 140, 24));
-    bodies.push(makeGreenFinish(325, 690, 175, 42));
-    bodies.push(makeGreenFinish(550, 690, 145, 42));
-    bodies.push(makeGreenFinish(775, 690, 175, 42));
-  } else if (variant === 9) {
-    // SPLIT PATH: marbles divide left and right, then collide again near the finish.
-    bodies.push(...makeSplitPath());
-    bodies.push(makeSpinner(330, 565, 190, 0.052));
-    bodies.push(makeSpinner(770, 565, 190, -0.052));
-    bodies.push(makeRedReset(550, 555, 115, 24));
-    bodies.push(makeRedReset(245, 625, 95, 24));
-    bodies.push(makeRedReset(855, 625, 95, 24));
-    bodies.push(makeGreenFinish(305, 690, 180, 42));
-    bodies.push(makeGreenFinish(795, 690, 180, 42));
-  } else if (variant === 10) {
-    // BUMPER CHUTE: dense staggered bumpers make a fast, chaotic pinball descent.
-    for (let row = 0; row < 4; row += 1) {
-      for (let col = 0; col < 6; col += 1) {
-        const offset = row % 2 === 0 ? 0 : 75;
-        bodies.push(makeBumper(175 + col * 150 + offset, 315 + row * 88, row === 2 ? 22 : 25));
-      }
-    }
-    bodies.push(makeRotatingCross(550, 635, 210, -0.055)[0]);
-    bodies.push(makeRedReset(165, 650, 135, 24));
-    bodies.push(makeRedReset(550, 620, 105, 24));
-    bodies.push(makeRedReset(935, 650, 135, 24));
-    bodies.push(makeGreenFinish(280, 690, 155, 42));
-    bodies.push(makeGreenFinish(550, 690, 145, 42));
-    bodies.push(makeGreenFinish(820, 690, 155, 42));
-  } else if (variant === 11) {
-    // DIAMOND MAZE: three open diamonds redirect the pack into several crossing lanes.
-    bodies.push(...makeDiamondMaze());
-    bodies.push(makeBumper(550, 330, 25));
-    bodies.push(makeSpinner(550, 610, 230, 0.052));
-    bodies.push(makeRedReset(165, 650, 130, 24));
-    bodies.push(makeRedReset(430, 620, 95, 24));
-    bodies.push(makeRedReset(670, 620, 95, 24));
-    bodies.push(makeRedReset(935, 650, 130, 24));
-    bodies.push(makeGreenFinish(350, 690, 170, 42));
-    bodies.push(makeGreenFinish(750, 690, 170, 42));
-  } else if (variant === 12) {
-    // SPINNER TUNNEL: alternating slopes and fast rotors create repeated pileups.
-    bodies.push(...makeSpinnerTunnel());
-    bodies.push(makeBumper(550, 355, 30));
-    bodies.push(makeRedReset(300, 620, 105, 24));
-    bodies.push(makeRedReset(550, 600, 100, 24));
-    bodies.push(makeRedReset(800, 620, 105, 24));
-    bodies.push(makeGreenFinish(235, 690, 145, 42));
-    bodies.push(makeGreenFinish(550, 690, 155, 42));
-    bodies.push(makeGreenFinish(865, 690, 145, 42));
-  } else if (variant === 13) {
-    // REFERENCE STAGE 4: four fast paddles, left pair clockwise and right pair counter-clockwise.
-    bodies.push(...makeReferenceStage4());
-  } else if (variant === 14) {
-    // REFERENCE STAGE 8: looping red reset balls rise through two side corridors.
-    bodies.push(...makeReferenceStage8());
-  } else {
-    // REFERENCE STAGE 9: a fast moving bridge pauses naturally at each side gap.
-    bodies.push(...makeReferenceStage9());
-  }
-
-  // Do not blanket-cover the bottom with sensors. Routes stay open and visible.
-  expandCourseVertically(bodies);
-  snapOutcomeZonesIntoFloor(bodies);
-  addDeadEndOutcomeZones(bodies);
-  reduceRedAtChokePoints(bodies);
-
-  // The hand-built reference stages already contain intentional motion.
-  if (variant < 13) enableGentleZoneMotion(bodies, variant);
-
-  synchronizeMirroredMotion(bodies);
-  ensureCentralDropClearance(bodies);
-  addRoundedWallEnds(bodies);
-  return removeUnsafeCornerGuards(bodies);
+  return shuffled(positions);
 }
 
 export default function MarbleRace({
@@ -1713,260 +354,141 @@ export default function MarbleRace({
   const engineRef = useRef<Engine | null>(null);
   const renderRef = useRef<Render | null>(null);
   const runnerRef = useRef<Runner | null>(null);
-  const marbleRefs = useRef<Map<number, MarbleMeta>>(new Map());
-  const remainingRef = useRef<MarbleContestant[]>([]);
-  const qualifiersRef = useRef<Set<string>>(new Set());
+  const marblesRef = useRef<Map<number, MarbleMeta>>(new Map());
+  const gateRef = useRef<Matter.Body | null>(null);
+  const remainingRef = useRef<MarbleContestant[]>(contestants);
   const eliminatedRef = useRef<MarbleContestant[]>([]);
+  const qualifiedRef = useRef<Set<string>>(new Set());
   const roundStartedRef = useRef(false);
   const roundResolvingRef = useRef(false);
-  const gateRef = useRef<Matter.Body | null>(null);
-  const hoverRef = useRef<MarbleMeta | null>(null);
-  const imageCacheRef = useRef<Map<string, HTMLImageElement>>(new Map());
-  const spawnPositionRef = useRef<Map<string, { x: number; y: number }>>(new Map());
-  const movementRef = useRef<
-    Map<
-      number,
-      {
-        x: number;
-        y: number;
-        lastMovedAt: number;
-        lastProgressAt: number;
-        lowestY: number;
-        stuckCount: number;
-      }
-    >
-  >(new Map());
-  const pinchEscapeRef = useRef<Map<number, number>>(new Map());
-  const redGraceUntilRef = useRef<Map<number, number>>(new Map());
-  const lastRedResetRef = useRef<Map<number, number>>(new Map());
-  const roundTransitionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
-    null,
-  );
-  const gateReleaseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
-    null,
-  );
-  const rebuildFrameRef = useRef<number | null>(null);
-  const worldGenerationRef = useRef(0);
-  const destroyingWorldRef = useRef(false);
   const mountedRef = useRef(true);
-  const countdownTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const speedRef = useRef<1 | 2 | 4>(1);
-  const eliminationDisplayRef = useRef<{ name: string; place: number } | null>(
-    null,
-  );
+  const levelQueueRef = useRef<LevelDefinition[]>([]);
+  const lastLevelIdRef = useRef<LevelId | null>(null);
+  const transitionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const rebuildFrameRef = useRef<number | null>(null);
 
-  const [remaining, setRemaining] = useState<MarbleContestant[]>(contestants);
+  const [enabledLevelIds, setEnabledLevelIds] = useState<Set<LevelId>>(
+    () => new Set(LEVELS.map((level) => level.id)),
+  );
+  const enabledLevelIdsRef = useRef(enabledLevelIds);
+  const [remaining, setRemaining] = useState(contestants);
   const [eliminated, setEliminated] = useState<MarbleContestant[]>([]);
   const [round, setRound] = useState(1);
   const [started, setStarted] = useState(false);
   const [paused, setPaused] = useState(false);
   const [qualifiedCount, setQualifiedCount] = useState(0);
   const [announcement, setAnnouncement] = useState<string | null>(null);
-  const [eliminationDisplay, setEliminationDisplay] = useState<{
-    name: string;
-    place: number;
-  } | null>(null);
   const [winner, setWinner] = useState<MarbleContestant | null>(null);
-  const [countdown, setCountdown] = useState<number | null>(null);
-  const [speed, setSpeed] = useState<1 | 2 | 4>(1);
+  const [currentLevelName, setCurrentLevelName] = useState("");
+  const [seasonStarted, setSeasonStarted] = useState(false);
 
-  const destroyWorld = useCallback(() => {
-    if (destroyingWorldRef.current) return;
-    destroyingWorldRef.current = true;
-    worldGenerationRef.current += 1;
+  useEffect(() => {
+    enabledLevelIdsRef.current = enabledLevelIds;
+  }, [enabledLevelIds]);
 
-    if (roundTransitionTimerRef.current) {
-      clearTimeout(roundTransitionTimerRef.current);
-      roundTransitionTimerRef.current = null;
+  const clearTransitionWork = useCallback(() => {
+    if (transitionTimerRef.current) {
+      clearTimeout(transitionTimerRef.current);
+      transitionTimerRef.current = null;
     }
-
-    if (gateReleaseTimerRef.current) {
-      clearTimeout(gateReleaseTimerRef.current);
-      gateReleaseTimerRef.current = null;
-    }
-
     if (rebuildFrameRef.current !== null) {
       cancelAnimationFrame(rebuildFrameRef.current);
       rebuildFrameRef.current = null;
     }
+  }, []);
 
-    if (countdownTimerRef.current) {
-      clearInterval(countdownTimerRef.current);
-      countdownTimerRef.current = null;
-    }
-
-    const engine = engineRef.current;
+  const destroyWorld = useCallback(() => {
+    clearTransitionWork();
     const runner = runnerRef.current;
     const render = renderRef.current;
+    const engine = engineRef.current;
 
-    // Stop simulation callbacks before removing the canvas or clearing bodies.
-    if (runner) {
-      Runner.stop(runner);
-    }
-
-    if (engine) {
-      Events.off(engine);
-    }
-
-    if (render) {
-      Render.stop(render);
-    }
-
+    if (runner) Runner.stop(runner);
+    if (render) Render.stop(render);
     if (engine) {
       World.clear(engine.world, false);
       Engine.clear(engine);
     }
-
     if (render) {
       render.textures = {};
       const canvas = render.canvas;
-      if (canvas?.parentNode) {
-        canvas.parentNode.removeChild(canvas);
-      }
+      if (canvas.parentNode) canvas.parentNode.removeChild(canvas);
     }
 
+    engineRef.current = null;
     renderRef.current = null;
     runnerRef.current = null;
-    engineRef.current = null;
     gateRef.current = null;
-    hoverRef.current = null;
-    marbleRefs.current.clear();
-    movementRef.current.clear();
-    pinchEscapeRef.current.clear();
-    redGraceUntilRef.current.clear();
-    lastRedResetRef.current.clear();
-    spawnPositionRef.current.clear();
+    marblesRef.current.clear();
+  }, [clearTransitionWork]);
 
-    destroyingWorldRef.current = false;
-  }, []);
+  const refillLevelQueue = useCallback(() => {
+    const enabled = LEVELS.filter((level) =>
+      enabledLevelIdsRef.current.has(level.id),
+    );
+    if (!enabled.length) return [];
 
-  const resetMarbleToStart = useCallback((body: Matter.Body) => {
-    const meta = marbleRefs.current.get(body.id);
-    const assigned = meta
-      ? spawnPositionRef.current.get(meta.contestant.id)
-      : undefined;
-
-    const fallback = {
-      x:
-        START_X +
-        MARBLE_RADIUS +
-        36 +
-        Math.random() * Math.max(1, START_WIDTH - (MARBLE_RADIUS + 36) * 2),
-      y: START_Y + MARBLE_RADIUS + 34,
-    };
-
-    const chosen = assigned || fallback;
-
-    Body.setPosition(body, {
-      x: chosen.x + (Math.random() - 0.5) * 6,
-      y: chosen.y + (Math.random() - 0.5) * 4,
-    });
-    Body.setVelocity(body, {
-      x: (Math.random() - 0.5) * 3.5,
-      y: (Math.random() - 0.5) * 1.8,
-    });
-    Body.setAngularVelocity(body, (Math.random() - 0.5) * 0.28);
-
-    const now = Date.now();
-    redGraceUntilRef.current.set(body.id, now + 1700);
-    lastRedResetRef.current.set(body.id, now);
-
-    const tracking = movementRef.current.get(body.id);
-    if (tracking) {
-      tracking.x = body.position.x;
-      tracking.y = body.position.y;
-      tracking.lowestY = body.position.y;
-      tracking.lastMovedAt = now;
-      tracking.lastProgressAt = now;
-      tracking.stuckCount = 0;
+    const nextQueue = shuffled(enabled);
+    if (
+      nextQueue.length > 1 &&
+      lastLevelIdRef.current &&
+      nextQueue[0].id === lastLevelIdRef.current
+    ) {
+      [nextQueue[0], nextQueue[1]] = [nextQueue[1], nextQueue[0]];
     }
+
+    levelQueueRef.current = nextQueue;
+    return nextQueue;
   }, []);
 
-  const flingFromSpinnerPinch = useCallback(
-    (
-      marble: Matter.Body,
-      spinner: ObstacleBody,
-      nearbySurface: Matter.Body,
-      now: number,
-    ) => {
-      const lastEscape = pinchEscapeRef.current.get(marble.id) ?? 0;
-      if (now - lastEscape < 850) return;
+  const takeNextLevel = useCallback(() => {
+    if (!levelQueueRef.current.length) refillLevelQueue();
+    const next = levelQueueRef.current.shift() || null;
+    if (next) lastLevelIdRef.current = next.id;
+    return next;
+  }, [refillLevelQueue]);
 
-      const awayFromSpinnerX = marble.position.x - spinner.position.x;
-      const awayFromSpinnerY = marble.position.y - spinner.position.y;
-      const magnitude = Math.max(
-        Math.hypot(awayFromSpinnerX, awayFromSpinnerY),
-        0.001,
-      );
+  const resetMarble = useCallback((meta: MarbleMeta, index: number) => {
+    const positions = makeSpawnPositions(
+      Math.max(remainingRef.current.length, index + 1),
+    );
+    const position = positions[index] || { x: WIDTH / 2, y: START_Y + 60 };
+    Body.setPosition(meta.body, position);
+    Body.setVelocity(meta.body, {
+      x: (Math.random() - 0.5) * 4,
+      y: (Math.random() - 0.5) * 2,
+    });
+    Body.setAngularVelocity(meta.body, (Math.random() - 0.5) * 0.2);
+  }, []);
 
-      const side =
-        Math.abs(awayFromSpinnerX) > 2
-          ? Math.sign(awayFromSpinnerX)
-          : Math.random() < 0.5
-            ? -1
-            : 1;
-
-      // Move the marble a little out of overlap first, then launch it.
-      Body.translate(marble, {
-        x: side * (MARBLE_RADIUS * 0.7),
-        y: -MARBLE_RADIUS * 0.55,
-      });
-
-      Body.setVelocity(marble, {
-        x:
-          side * (7.5 + Math.random() * 3.5) +
-          (awayFromSpinnerX / magnitude) * 2,
-        y: -7.5 - Math.random() * 3.5,
-      });
-
-      Body.setAngularVelocity(
-        marble,
-        side * (0.35 + Math.random() * 0.35),
-      );
-
-      pinchEscapeRef.current.set(marble.id, now);
-
-      const tracking = movementRef.current.get(marble.id);
-      if (tracking) {
-        tracking.x = marble.position.x;
-        tracking.y = marble.position.y;
-        tracking.lowestY = marble.position.y;
-        tracking.lastMovedAt = now;
-        tracking.lastProgressAt = now;
-        tracking.stuckCount = 0;
-      }
-    },
-    [],
-  );
+  const resolveEliminationRef = useRef<(loser: MarbleContestant) => void>(() => {});
 
   const buildRound = useCallback(
     (roundContestants: MarbleContestant[], roundNumber: number) => {
-      if (!sceneRef.current || roundContestants.length < 1) return;
-
+      if (!sceneRef.current || !roundContestants.length) return;
       destroyWorld();
-      if (!mountedRef.current || !sceneRef.current) return;
 
-      worldGenerationRef.current += 1;
-      const generation = worldGenerationRef.current;
+      const level = takeNextLevel();
+      if (!level) {
+        setAnnouncement("Turn on at least one custom level.");
+        return;
+      }
 
-      qualifiersRef.current.clear();
-      roundStartedRef.current = false;
-      roundResolvingRef.current = false;
+      setCurrentLevelName(level.name);
       setStarted(false);
       setPaused(false);
       setQualifiedCount(0);
       setAnnouncement(null);
-      eliminationDisplayRef.current = null;
-      setEliminationDisplay(null);
+      qualifiedRef.current.clear();
+      roundStartedRef.current = false;
+      roundResolvingRef.current = false;
 
       const engine = Engine.create({
-        gravity: { x: 0, y: 1.05, scale: 0.001 },
+        gravity: { x: 0, y: 1.04, scale: 0.001 },
       });
       engine.positionIterations = 10;
       engine.velocityIterations = 8;
       engine.constraintIterations = 4;
-      engineRef.current = engine;
-      engine.timing.timeScale = speedRef.current;
 
       const render = Render.create({
         element: sceneRef.current,
@@ -1979,32 +501,27 @@ export default function MarbleRace({
           pixelRatio: Math.min(window.devicePixelRatio || 1, 2),
         },
       });
-      renderRef.current = render;
+      const runner = Runner.create();
 
-      const stageBodies = makeStageLayout(roundNumber);
+      engineRef.current = engine;
+      renderRef.current = render;
+      runnerRef.current = runner;
+
+      const stageBodies = level.build();
       gateRef.current =
-        stageBodies.find((body) => body.label === "start-gate") ?? null;
+        stageBodies.find((body) => body.label === "start-gate") || null;
       Composite.add(engine.world, stageBodies);
 
-      const ordered = [...roundContestants];
-      const spawnPositions = makeRandomSpawnPositions(ordered.length);
+      const positions = makeSpawnPositions(roundContestants.length);
       const marbleMap = new Map<number, MarbleMeta>();
-      spawnPositionRef.current = new Map(
-        ordered.map((contestant, index) => [
-          contestant.id,
-          spawnPositions[index],
-        ]),
-      );
 
-      ordered.forEach((contestant, index) => {
-        const { x, y } = spawnPositions[index];
-
-        const marble = Bodies.circle(x, y, MARBLE_RADIUS, {
-          restitution: 0.98,
-          friction: 0.0002,
-          frictionStatic: 0,
-          frictionAir: 0.00045,
-          density: 0.0038,
+      roundContestants.forEach((contestant, index) => {
+        const position = positions[index];
+        const marble = Bodies.circle(position.x, position.y, MARBLE_RADIUS, {
+          restitution: 0.88,
+          friction: 0.012,
+          frictionAir: 0.004,
+          density: 0.004,
           collisionFilter: {
             category: CATEGORY_MARBLE,
             mask: CATEGORY_MARBLE | CATEGORY_STAGE | CATEGORY_SENSOR,
@@ -2015,79 +532,51 @@ export default function MarbleRace({
             lineWidth: 3,
           },
         });
-        marble.label = `marble:${contestant.id}`;
-        Composite.add(engine.world, marble);
-        marbleMap.set(marble.id, {
-          contestant,
-          body: marble,
-          textureUrl: contestant.imageUrl,
-        });
 
-        if (
-          contestant.imageUrl &&
-          !imageCacheRef.current.has(contestant.imageUrl)
-        ) {
-          const image = new Image();
+        marble.label = `marble:${contestant.id}`;
+        const image = contestant.imageUrl ? new Image() : null;
+        if (image) {
           image.crossOrigin = "anonymous";
           image.src = contestant.imageUrl;
-          imageCacheRef.current.set(contestant.imageUrl, image);
         }
+
+        marbleMap.set(marble.id, { contestant, body: marble, image });
+        Composite.add(engine.world, marble);
       });
 
-      marbleRefs.current = marbleMap;
-      movementRef.current = new Map(
-        [...marbleMap.values()].map((meta) => [
-          meta.body.id,
-          {
-            x: meta.body.position.x,
-            y: meta.body.position.y,
-            lastMovedAt: Date.now(),
-            lastProgressAt: Date.now(),
-            lowestY: meta.body.position.y,
-            stuckCount: 0,
-          },
-        ]),
-      );
-
-      // Track pointer coordinates for hover labels only. Do not attach a
-      // MouseConstraint, because it can grab and move marble bodies.
+      marblesRef.current = marbleMap;
       const mouse = Mouse.create(render.canvas);
 
       Events.on(engine, "beforeUpdate", () => {
-        if (
-          !mountedRef.current ||
-          engineRef.current !== engine ||
-          worldGenerationRef.current !== generation
-        ) {
-          return;
-        }
+        const timestamp = engine.timing.timestamp;
 
-        for (const body of Composite.allBodies(
-          engine.world,
-        ) as ObstacleBody[]) {
-          const rotateSpeed = body.plugin?.rotateSpeed;
-          if (rotateSpeed) Body.setAngle(body, body.angle + rotateSpeed);
-
-          const moveAxis = body.plugin?.moveAxis;
-          const originX = body.plugin?.moveOriginX;
-          const originY = body.plugin?.moveOriginY;
-          const amplitude = body.plugin?.moveAmplitude;
-          const moveSpeed = body.plugin?.moveSpeed;
-          const phase = body.plugin?.movePhase ?? 0;
+        for (const body of Composite.allBodies(engine.world) as ObstacleBody[]) {
+          if (body.plugin?.rotateSpeed) {
+            Body.setAngle(body, body.angle + body.plugin.rotateSpeed);
+          }
 
           if (
-            moveAxis &&
-            originX !== undefined &&
-            originY !== undefined &&
-            amplitude !== undefined &&
-            moveSpeed !== undefined
+            body.plugin?.moveAxis &&
+            body.plugin.moveOriginX !== undefined &&
+            body.plugin.moveOriginY !== undefined &&
+            body.plugin.moveAmplitude !== undefined &&
+            body.plugin.moveSpeed !== undefined
           ) {
             const offset =
-              Math.sin(engine.timing.timestamp * moveSpeed + phase) * amplitude;
+              Math.sin(
+                timestamp * body.plugin.moveSpeed +
+                  (body.plugin.movePhase || 0),
+              ) * body.plugin.moveAmplitude;
 
             Body.setPosition(body, {
-              x: moveAxis === "x" ? originX + offset : originX,
-              y: moveAxis === "y" ? originY + offset : originY,
+              x:
+                body.plugin.moveAxis === "x"
+                  ? body.plugin.moveOriginX + offset
+                  : body.plugin.moveOriginX,
+              y:
+                body.plugin.moveAxis === "y"
+                  ? body.plugin.moveOriginY + offset
+                  : body.plugin.moveOriginY,
             });
           }
 
@@ -2097,323 +586,75 @@ export default function MarbleRace({
             body.plugin.wrapMaxY !== undefined &&
             body.plugin.wrapSpeed !== undefined
           ) {
-            const nextY = body.position.y - body.plugin.wrapSpeed;
-
-            Body.setPosition(body, {
-              x: body.position.x,
-              y:
-                nextY < body.plugin.wrapMinY
-                  ? body.plugin.wrapMaxY
-                  : nextY,
-            });
-          }
-        }
-
-        if (roundStartedRef.current && !roundResolvingRef.current) {
-          const now = Date.now();
-
-          const worldBodies = Composite.allBodies(engine.world) as ObstacleBody[];
-          const rotatingBodies = worldBodies.filter(
-            (body) =>
-              body.plugin?.rotateSpeed !== undefined &&
-              Math.abs(body.plugin.rotateSpeed) > 0,
-          );
-          const solidSurfaces = worldBodies.filter(
-            (body) =>
-              body.isStatic &&
-              !body.isSensor &&
-              body.plugin?.rotateSpeed === undefined &&
-              body.label !== "start-gate",
-          );
-
-          for (const meta of marbleRefs.current.values()) {
-            if (qualifiersRef.current.has(meta.contestant.id)) continue;
-
-            const marble = meta.body;
-
-            for (const spinner of rotatingBodies) {
-              const spinnerPadding = MARBLE_RADIUS + 18;
-              const nearSpinner =
-                marble.position.x >= spinner.bounds.min.x - spinnerPadding &&
-                marble.position.x <= spinner.bounds.max.x + spinnerPadding &&
-                marble.position.y >= spinner.bounds.min.y - spinnerPadding &&
-                marble.position.y <= spinner.bounds.max.y + spinnerPadding;
-
-              if (!nearSpinner) continue;
-
-              const nearbySurface = solidSurfaces.find((surface) => {
-                const surfacePadding = MARBLE_RADIUS + 8;
-                const nearSurface =
-                  marble.position.x >=
-                    surface.bounds.min.x - surfacePadding &&
-                  marble.position.x <=
-                    surface.bounds.max.x + surfacePadding &&
-                  marble.position.y >=
-                    surface.bounds.min.y - surfacePadding &&
-                  marble.position.y <=
-                    surface.bounds.max.y + surfacePadding;
-
-                if (!nearSurface) return false;
-
-                const spinnerAndSurfaceClose =
-                  spinner.bounds.max.x + MIN_SAFE_GAP >
-                    surface.bounds.min.x &&
-                  spinner.bounds.min.x - MIN_SAFE_GAP <
-                    surface.bounds.max.x &&
-                  spinner.bounds.max.y + MIN_SAFE_GAP >
-                    surface.bounds.min.y &&
-                  spinner.bounds.min.y - MIN_SAFE_GAP <
-                    surface.bounds.max.y;
-
-                return spinnerAndSurfaceClose;
-              });
-
-              if (!nearbySurface) continue;
-
-              const slowEnoughToBePinched =
-                marble.speed < 2.4 ||
-                Math.abs(marble.velocity.y) < 1.2;
-
-              if (slowEnoughToBePinched) {
-                flingFromSpinnerPinch(
-                  marble,
-                  spinner,
-                  nearbySurface,
-                  now,
-                );
-                break;
-              }
-            }
-          }
-
-          for (const meta of marbleRefs.current.values()) {
-            if (qualifiersRef.current.has(meta.contestant.id)) continue;
-
-            const redGraceUntil =
-              redGraceUntilRef.current.get(meta.body.id) ?? 0;
-            if (now < redGraceUntil) {
-              const tracking = movementRef.current.get(meta.body.id);
-              if (tracking) {
-                tracking.x = meta.body.position.x;
-                tracking.y = meta.body.position.y;
-                tracking.lowestY = meta.body.position.y;
-                tracking.lastMovedAt = now;
-                tracking.lastProgressAt = now;
-              }
-              continue;
-            }
-
-            const tracking = movementRef.current.get(meta.body.id);
-            if (!tracking) continue;
-
-            const dx = meta.body.position.x - tracking.x;
-            const dy = meta.body.position.y - tracking.y;
-            const moved = Math.hypot(dx, dy);
-
-            const madeDownwardProgress =
-              meta.body.position.y > tracking.lowestY + MARBLE_RADIUS * 0.75;
-
-            if (madeDownwardProgress) {
-              tracking.lowestY = meta.body.position.y;
-              tracking.lastProgressAt = now;
-            }
-
-            if (moved > 26 || meta.body.speed > 1.8) {
-              tracking.x = meta.body.position.x;
-              tracking.y = meta.body.position.y;
-              tracking.lastMovedAt = now;
-              tracking.stuckCount = 0;
-            }
-
-            const physicallyStuck = now - tracking.lastMovedAt > 1500;
-            const repeatingLoop =
-              now - tracking.lastProgressAt > 5200 &&
-              meta.body.position.y < FLOOR_Y - 80;
-
-            if (physicallyStuck || repeatingLoop) {
-              const activeIndex = [...marbleRefs.current.values()].findIndex(
-                (entry) => entry.body.id === meta.body.id,
-              );
-
-              resetMarbleToStart(meta.body);
-
-              tracking.x = meta.body.position.x;
-              tracking.y = meta.body.position.y;
-              tracking.lowestY = meta.body.position.y;
-              tracking.lastMovedAt = now;
-              tracking.lastProgressAt = now;
-              tracking.stuckCount = 0;
-            }
-
-            if (
-              meta.body.position.y > HEIGHT + 80 ||
-              meta.body.position.x < -80 ||
-              meta.body.position.x > WIDTH + 80
-            ) {
-              const activeIndex = [...marbleRefs.current.values()].findIndex(
-                (entry) => entry.body.id === meta.body.id,
-              );
-              resetMarbleToStart(meta.body);
-              tracking.lastMovedAt = now;
-            }
-          }
-        }
-
-        if (
-          roundStartedRef.current &&
-          !roundResolvingRef.current &&
-          engine.timing.timestamp > 18000
-        ) {
-          const activeMarbles = [...marbleRefs.current.values()].filter(
-            (meta) => !qualifiersRef.current.has(meta.contestant.id),
-          );
-
-          const nobodyReachedLowerCourse = activeMarbles.every(
-            (meta) => meta.body.position.y < HEIGHT * 0.62,
-          );
-
-          if (activeMarbles.length > 0 && nobodyReachedLowerCourse) {
-            const lowest = [...activeMarbles].sort(
-              (a, b) => b.body.position.y - a.body.position.y,
-            )[0];
-
-            Body.setPosition(lowest.body, {
-              x: WIDTH / 2 + (Math.random() - 0.5) * 24,
-              y: HEIGHT * 0.64,
-            });
-            Body.setVelocity(lowest.body, {
-              x: (Math.random() - 0.5) * 3,
-              y: 5,
-            });
+            let nextY = body.position.y - body.plugin.wrapSpeed;
+            if (nextY < body.plugin.wrapMinY) nextY = body.plugin.wrapMaxY;
+            Body.setPosition(body, { x: body.position.x, y: nextY });
           }
         }
 
         if (!roundStartedRef.current) {
-          let index = 0;
-          for (const meta of marbleRefs.current.values()) {
-            if (qualifiersRef.current.has(meta.contestant.id)) continue;
-            const chamberCenterX = START_X + START_WIDTH / 2;
-            const horizontalPush =
-              meta.body.position.x < chamberCenterX ? 1 : -1;
-
+          for (const meta of marblesRef.current.values()) {
             Body.applyForce(meta.body, meta.body.position, {
-              x:
-                horizontalPush * (0.0015 + Math.random() * 0.0018) +
-                (Math.random() - 0.5) * 0.0028,
-              y: -0.0014 + (Math.random() - 0.5) * 0.0026,
+              x: (Math.random() - 0.5) * 0.0008,
+              y: (Math.random() - 0.5) * 0.00025,
             });
-
-            if (Math.random() < 0.018) {
-              Body.setVelocity(meta.body, {
-                x: (Math.random() - 0.5) * 13,
-                y: -6 + Math.random() * 11,
-              });
-              Body.setAngularVelocity(
-                meta.body,
-                (Math.random() - 0.5) * 0.9,
-              );
-            }
-
-            const leftLimit = START_X + MARBLE_RADIUS + 6;
-            const rightLimit =
-              START_X + START_WIDTH - MARBLE_RADIUS - 6;
-            const topLimit = START_Y + MARBLE_RADIUS + 4;
-            const bottomLimit =
-              START_Y + START_HEIGHT - MARBLE_RADIUS - 8;
-
-            // The physical walls handle containment. These velocity corrections
-            // are only a gentle backup and do not teleport the marble.
-            if (meta.body.position.x <= leftLimit) {
-              Body.setVelocity(meta.body, {
-                x: Math.abs(meta.body.velocity.x) + 1.5,
-                y: meta.body.velocity.y,
-              });
-            } else if (meta.body.position.x >= rightLimit) {
-              Body.setVelocity(meta.body, {
-                x: -Math.abs(meta.body.velocity.x) - 1.5,
-                y: meta.body.velocity.y,
-              });
-            }
-
-            if (meta.body.position.y <= topLimit) {
-              Body.setVelocity(meta.body, {
-                x: meta.body.velocity.x,
-                y: Math.abs(meta.body.velocity.y) + 1,
-              });
-            } else if (meta.body.position.y >= bottomLimit) {
-              Body.setVelocity(meta.body, {
-                x: meta.body.velocity.x,
-                y: -Math.abs(meta.body.velocity.y) - 1,
-              });
-            }
-            index += 1;
           }
         }
       });
 
       Events.on(engine, "collisionStart", (event) => {
-        if (
-          !mountedRef.current ||
-          engineRef.current !== engine ||
-          worldGenerationRef.current !== generation
-        ) {
-          return;
-        }
-
         for (const pair of event.pairs) {
-          const bodies = [
-            pair.bodyA as ObstacleBody,
-            pair.bodyB as ObstacleBody,
-          ];
-          const marbleBody = bodies.find((body) =>
+          const bodyA = pair.bodyA as ObstacleBody;
+          const bodyB = pair.bodyB as ObstacleBody;
+          const marbleBody = [bodyA, bodyB].find((body) =>
             body.label.startsWith("marble:"),
           );
-          const sensorBody = bodies.find(
+          const sensorBody = [bodyA, bodyB].find(
             (body) =>
-              body.plugin?.obstacleKind === "red-reset" ||
-              body.plugin?.obstacleKind === "green-finish",
+              body.plugin?.kind === "red-reset" ||
+              body.plugin?.kind === "green-finish",
           );
 
-          if (!marbleBody || !sensorBody || !roundStartedRef.current) continue;
-          const meta = marbleRefs.current.get(marbleBody.id);
-          if (!meta || qualifiersRef.current.has(meta.contestant.id)) continue;
-
-          if (sensorBody.plugin.obstacleKind === "red-reset") {
-            const now = Date.now();
-            const graceUntil = redGraceUntilRef.current.get(marbleBody.id) ?? 0;
-            const lastReset = lastRedResetRef.current.get(marbleBody.id) ?? 0;
-            const safelyBelowSpawn =
-              marbleBody.position.y >
-              START_Y + START_HEIGHT + MARBLE_RADIUS * 1.25;
-
-            if (
-              now >= graceUntil &&
-              now - lastReset >= 900 &&
-              safelyBelowSpawn
-            ) {
-              resetMarbleToStart(marbleBody);
-            }
-
+          if (
+            !marbleBody ||
+            !sensorBody ||
+            !roundStartedRef.current ||
+            roundResolvingRef.current
+          ) {
             continue;
           }
 
-          if (sensorBody.plugin.obstacleKind === "green-finish") {
-            qualifiersRef.current.add(meta.contestant.id);
-            setQualifiedCount(qualifiersRef.current.size);
+          const meta = marblesRef.current.get(marbleBody.id);
+          if (!meta || qualifiedRef.current.has(meta.contestant.id)) continue;
+
+          if (sensorBody.plugin.kind === "red-reset") {
+            const activeMetas = [...marblesRef.current.values()].filter(
+              (item) => !qualifiedRef.current.has(item.contestant.id),
+            );
+            const index = activeMetas.findIndex(
+              (item) => item.contestant.id === meta.contestant.id,
+            );
+            resetMarble(meta, Math.max(index, 0));
+            continue;
+          }
+
+          if (sensorBody.plugin.kind === "green-finish") {
+            qualifiedRef.current.add(meta.contestant.id);
+            setQualifiedCount(qualifiedRef.current.size);
             Composite.remove(engine.world, marbleBody);
 
-            const aliveCount = roundContestants.length;
             if (
-              qualifiersRef.current.size === aliveCount - 1 &&
+              qualifiedRef.current.size === roundContestants.length - 1 &&
               !roundResolvingRef.current
             ) {
               roundResolvingRef.current = true;
-              const loser = [...marbleRefs.current.values()].find(
-                (entry) => !qualifiersRef.current.has(entry.contestant.id),
+              const loser = [...marblesRef.current.values()].find(
+                (item) => !qualifiedRef.current.has(item.contestant.id),
               );
-
               if (loser) {
-                resolveEliminationRef.current(loser.contestant);
+                transitionTimerRef.current = setTimeout(() => {
+                  resolveEliminationRef.current(loser.contestant);
+                }, 650);
               }
             }
           }
@@ -2421,53 +662,26 @@ export default function MarbleRace({
       });
 
       Events.on(render, "afterRender", () => {
-        if (
-          !mountedRef.current ||
-          renderRef.current !== render ||
-          engineRef.current !== engine ||
-          worldGenerationRef.current !== generation
-        ) {
-          return;
-        }
-
-        const ctx = render.context;
-        const bounds = render.bounds;
-        const mousePosition = mouse.position;
+        const context = render.context;
+        const pointer = mouse.position;
         let hovered: MarbleMeta | null = null;
 
-        for (const meta of marbleRefs.current.values()) {
-          if (qualifiersRef.current.has(meta.contestant.id)) continue;
-          const dx = mousePosition.x - meta.body.position.x;
-          const dy = mousePosition.y - meta.body.position.y;
-          if (dx * dx + dy * dy <= MARBLE_RADIUS * MARBLE_RADIUS) {
-            hovered = meta;
-            break;
-          }
-        }
-        hoverRef.current = hovered;
+        for (const meta of marblesRef.current.values()) {
+          if (qualifiedRef.current.has(meta.contestant.id)) continue;
+          const x = meta.body.position.x;
+          const y = meta.body.position.y;
 
-        // Draw each contestant image inside a truly circular marble.
-        for (const meta of marbleRefs.current.values()) {
-          if (qualifiersRef.current.has(meta.contestant.id)) continue;
+          context.save();
+          context.beginPath();
+          context.arc(x, y, MARBLE_RADIUS - 2, 0, Math.PI * 2);
+          context.clip();
 
-          const { x, y } = meta.body.position;
-          const image = imageCacheRef.current.get(meta.textureUrl);
-
-          ctx.save();
-          ctx.beginPath();
-          ctx.arc(x, y, MARBLE_RADIUS - 2, 0, Math.PI * 2);
-          ctx.clip();
-
-          if (image?.complete && image.naturalWidth > 0) {
-            const sourceSize = Math.min(
-              image.naturalWidth,
-              image.naturalHeight,
-            );
-            const sourceX = (image.naturalWidth - sourceSize) / 2;
-            const sourceY = (image.naturalHeight - sourceSize) / 2;
-
-            ctx.drawImage(
-              image,
+          if (meta.image?.complete && meta.image.naturalWidth > 0) {
+            const sourceSize = Math.min(meta.image.naturalWidth, meta.image.naturalHeight);
+            const sourceX = (meta.image.naturalWidth - sourceSize) / 2;
+            const sourceY = (meta.image.naturalHeight - sourceSize) / 2;
+            context.drawImage(
+              meta.image,
               sourceX,
               sourceY,
               sourceSize,
@@ -2478,190 +692,106 @@ export default function MarbleRace({
               MARBLE_RADIUS * 2,
             );
           } else {
-            ctx.fillStyle = "#dbeafe";
-            ctx.fillRect(
+            context.fillStyle = "#dbeafe";
+            context.fillRect(
               x - MARBLE_RADIUS,
               y - MARBLE_RADIUS,
               MARBLE_RADIUS * 2,
               MARBLE_RADIUS * 2,
             );
           }
+          context.restore();
 
-          ctx.restore();
+          context.save();
+          context.beginPath();
+          context.arc(x, y, MARBLE_RADIUS, 0, Math.PI * 2);
+          context.strokeStyle = "#111827";
+          context.lineWidth = 3;
+          context.stroke();
+          context.restore();
 
-          ctx.save();
-          ctx.beginPath();
-          ctx.arc(x, y, MARBLE_RADIUS, 0, Math.PI * 2);
-          ctx.strokeStyle = "#111827";
-          ctx.lineWidth = 3;
-          ctx.stroke();
-          ctx.restore();
+          const deltaX = pointer.x - x;
+          const deltaY = pointer.y - y;
+          if (
+            deltaX * deltaX + deltaY * deltaY <=
+            MARBLE_RADIUS * MARBLE_RADIUS
+          ) {
+            hovered = meta;
+          }
         }
 
-        const eliminationInfo = eliminationDisplayRef.current;
-        if (eliminationInfo) {
-          ctx.save();
-          ctx.fillStyle = "#000000";
-          ctx.textAlign = "center";
-          ctx.textBaseline = "middle";
-
-          const safeDisplayName = safeName(eliminationInfo.name);
-          ctx.font = "1000 64px system-ui, sans-serif";
-          ctx.fillText(safeDisplayName, WIDTH / 2, HEIGHT * 0.46);
-
-          ctx.font = "900 34px system-ui, sans-serif";
-          ctx.fillText(
-            `ELIMINATED · ${ordinal(eliminationInfo.place)} PLACE`,
-            WIDTH / 2,
-            HEIGHT * 0.54,
-          );
-          ctx.restore();
-        }
-
-        if (hovered && !eliminationDisplayRef.current) {
-          const label = safeName(hovered.contestant.name);
-          ctx.save();
-          ctx.font = "700 16px system-ui, sans-serif";
-          const width = ctx.measureText(label).width + 22;
+        if (hovered) {
+          const label = hovered.contestant.name;
+          context.save();
+          context.font = "700 16px system-ui, sans-serif";
+          const labelWidth = context.measureText(label).width + 22;
           const x = Math.max(
             8,
-            Math.min(WIDTH - width - 8, hovered.body.position.x - width / 2),
+            Math.min(
+              WIDTH - labelWidth - 8,
+              hovered.body.position.x - labelWidth / 2,
+            ),
           );
-          const y = hovered.body.position.y - MARBLE_RADIUS - 40;
-          ctx.fillStyle = "rgba(17,24,39,.94)";
-          ctx.beginPath();
-          ctx.roundRect(x, y, width, 30, 8);
-          ctx.fill();
-          ctx.fillStyle = "#fff";
-          ctx.textAlign = "center";
-          ctx.textBaseline = "middle";
-          ctx.fillText(label, x + width / 2, y + 15);
-          ctx.restore();
+          const y = hovered.body.position.y - MARBLE_RADIUS - 39;
+          context.fillStyle = "rgba(17,24,39,.95)";
+          context.beginPath();
+          context.roundRect(x, y, labelWidth, 30, 8);
+          context.fill();
+          context.fillStyle = "#fff";
+          context.textAlign = "center";
+          context.textBaseline = "middle";
+          context.fillText(label, x + labelWidth / 2, y + 15);
+          context.restore();
         }
       });
 
-      const runner = Runner.create();
-      runnerRef.current = runner;
       Render.run(render);
       Runner.run(runner, engine);
     },
-    [destroyWorld, flingFromSpinnerPinch, resetMarbleToStart],
+    [destroyWorld, resetMarble, takeNextLevel],
   );
 
   const resolveElimination = useCallback(
     (loser: MarbleContestant) => {
       const engine = engineRef.current;
-      if (!engine || !roundResolvingRef.current) return;
+      if (!engine) return;
 
-      const place = remainingRef.current.length;
-      const display = { name: loser.name, place };
-
-      eliminationDisplayRef.current = display;
-      setEliminationDisplay(display);
-      setAnnouncement(null);
-      setPaused(false);
-
-      const loserMeta = [...marbleRefs.current.values()].find(
-        (entry) => entry.contestant.id === loser.id,
-      );
-
-      const preservedPosition = loserMeta
-        ? { ...loserMeta.body.position }
-        : { x: WIDTH / 2, y: START_Y + START_HEIGHT + 20 };
-      const preservedVelocity = loserMeta
-        ? { ...loserMeta.body.velocity }
-        : { x: 0, y: 1 };
-      const preservedAngularVelocity = loserMeta
-        ? loserMeta.body.angularVelocity
-        : 0;
-
-      // Everything disappears immediately except the final marble.
       for (const body of [
         ...Composite.allBodies(engine.world),
       ] as ObstacleBody[]) {
         const isLoser = body.label === `marble:${loser.id}`;
-        if (!isLoser) Composite.remove(engine.world, body);
+        const isFloor = body.plugin?.kind === "floor";
+        if (!isLoser && !isFloor) Composite.remove(engine.world, body);
       }
 
-      qualifiersRef.current.clear();
-      for (const meta of marbleRefs.current.values()) {
-        if (meta.contestant.id !== loser.id) {
-          qualifiersRef.current.add(meta.contestant.id);
-        }
-      }
-
-      // Blank white bounce chamber with an actual visible floor.
-      const wallOptions: Matter.IChamferableBodyDefinition = {
-        isStatic: true,
-        friction: 0,
-        restitution: 0.92,
-        collisionFilter: { category: CATEGORY_STAGE },
-        render: {
-          fillStyle: "#ffffff",
-          strokeStyle: "#ffffff",
-          lineWidth: 0,
-        },
-      };
-
-      const visibleFloor = Bodies.rectangle(
-        WIDTH / 2,
-        HEIGHT - 18,
-        WIDTH,
-        36,
-        {
-          ...wallOptions,
-          render: {
-            fillStyle: "#111827",
-            strokeStyle: "#111827",
-            lineWidth: 0,
-          },
-        },
+      const loserMeta = [...marblesRef.current.values()].find(
+        (meta) => meta.contestant.id === loser.id,
       );
-
-      Composite.add(engine.world, [
-        visibleFloor,
-        Bodies.rectangle(18, HEIGHT / 2, 36, HEIGHT, {
-          ...wallOptions,
-          render: { visible: false },
-        }),
-        Bodies.rectangle(WIDTH - 18, HEIGHT / 2, 36, HEIGHT, {
-          ...wallOptions,
-          render: { visible: false },
-        }),
-        Bodies.rectangle(WIDTH / 2, 18, WIDTH, 36, {
-          ...wallOptions,
-          render: { visible: false },
-        }),
-      ]);
-
       if (loserMeta) {
         Body.setStatic(loserMeta.body, false);
-        Body.setPosition(loserMeta.body, preservedPosition);
-        Body.setVelocity(loserMeta.body, preservedVelocity);
-        Body.setAngularVelocity(
-          loserMeta.body,
-          preservedAngularVelocity,
-        );
+        Body.setVelocity(loserMeta.body, { x: 0, y: 3 });
+        Body.setAngularVelocity(loserMeta.body, 0.08);
       }
 
-      roundTransitionTimerRef.current = setTimeout(() => {
-        roundTransitionTimerRef.current = null;
-        if (!mountedRef.current || engineRef.current !== engine) return;
+      const place = remainingRef.current.length;
+      setAnnouncement(
+        `${loser.name} is eliminated, finishing in ${ordinal(place)} place.`,
+      );
+
+      transitionTimerRef.current = setTimeout(() => {
+        if (!mountedRef.current) return;
 
         const nextRemaining = remainingRef.current.filter(
           (contestant) => contestant.id !== loser.id,
         );
         const nextEliminated = [loser, ...eliminatedRef.current];
-
-        eliminatedRef.current = nextEliminated;
         remainingRef.current = nextRemaining;
-        setEliminated(nextEliminated);
+        eliminatedRef.current = nextEliminated;
         setRemaining(nextRemaining);
+        setEliminated(nextEliminated);
 
         if (nextRemaining.length === 1) {
           const seasonWinner = nextRemaining[0];
-          eliminationDisplayRef.current = null;
-          setEliminationDisplay(null);
           setWinner(seasonWinner);
           setAnnouncement(`${seasonWinner.name} wins the Marble Race!`);
           onSeasonFinished?.(seasonWinner, [seasonWinner, ...nextEliminated]);
@@ -2669,58 +799,47 @@ export default function MarbleRace({
         }
 
         const nextRound = round + 1;
-        eliminationDisplayRef.current = null;
-        setEliminationDisplay(null);
         setRound(nextRound);
-
-        // Build the next world on a later frame. buildRound safely disposes
-        // the current Matter world before creating its replacement.
         rebuildFrameRef.current = requestAnimationFrame(() => {
           rebuildFrameRef.current = null;
-
-          if (!mountedRef.current || !sceneRef.current) return;
+          if (!mountedRef.current) return;
           buildRound(nextRemaining, nextRound);
         });
-      }, 3600);
+      }, 3000);
     },
-    [buildRound, destroyWorld, onSeasonFinished, round],
+    [buildRound, onSeasonFinished, round],
   );
 
-  // Keep callback reachable inside Matter collision event without stale state.
-  const resolveEliminationRef = useRef(resolveElimination);
-  const startRoundRef = useRef<() => void>(() => {});
   useEffect(() => {
     resolveEliminationRef.current = resolveElimination;
   }, [resolveElimination]);
 
-  useEffect(() => {
-    mountedRef.current = true;
+  const beginSeason = useCallback(() => {
+    const enabled = LEVELS.filter((level) =>
+      enabledLevelIdsRef.current.has(level.id),
+    );
+    if (!enabled.length) {
+      setAnnouncement("Turn on at least one custom level.");
+      return;
+    }
 
-    return () => {
-      mountedRef.current = false;
-      destroyWorld();
-    };
-  }, [destroyWorld]);
-
-  useEffect(() => {
     remainingRef.current = contestants;
     eliminatedRef.current = [];
+    levelQueueRef.current = shuffled(enabled);
+    lastLevelIdRef.current = null;
     setRemaining(contestants);
     setEliminated([]);
     setRound(1);
     setWinner(null);
+    setAnnouncement(null);
+    setSeasonStarted(true);
+    buildRound(contestants, 1);
+  }, [buildRound, contestants]);
 
-    if (contestants.length > 0 && mountedRef.current) {
-      buildRound(contestants, 1);
-    }
-  }, [contestants, buildRound]);
-
-  const releaseGate = () => {
-    if (!engineRef.current || winner) return;
-
+  const startRound = useCallback(() => {
+    if (!engineRef.current || started || winner || !seasonStarted) return;
     roundStartedRef.current = true;
     setStarted(true);
-    setCountdown(null);
     setAnnouncement(null);
 
     if (gateRef.current) {
@@ -2728,52 +847,19 @@ export default function MarbleRace({
       gateRef.current = null;
     }
 
-    for (const meta of marbleRefs.current.values()) {
+    for (const meta of marblesRef.current.values()) {
       Body.setVelocity(meta.body, {
         x: (Math.random() - 0.5) * 3,
         y: 1 + Math.random() * 2,
       });
     }
-  };
+  }, [seasonStarted, started, winner]);
 
-  const startRound = () => {
-    if (!engineRef.current || started || winner) return;
-    if (countdownTimerRef.current) return;
+  const togglePause = useCallback(() => {
+    if (!runnerRef.current || !engineRef.current || winner || !seasonStarted) {
+      return;
+    }
 
-    let value = 3;
-    setCountdown(value);
-
-    countdownTimerRef.current = setInterval(() => {
-      value -= 1;
-
-      if (value > 0) {
-        setCountdown(value);
-        return;
-      }
-
-      if (countdownTimerRef.current) {
-        clearInterval(countdownTimerRef.current);
-        countdownTimerRef.current = null;
-      }
-
-      setCountdown(0);
-
-      if (gateReleaseTimerRef.current) {
-        clearTimeout(gateReleaseTimerRef.current);
-      }
-
-      gateReleaseTimerRef.current = setTimeout(() => {
-        gateReleaseTimerRef.current = null;
-        if (!mountedRef.current) return;
-        releaseGate();
-      }, 350);
-    }, 700);
-  };
-
-  startRoundRef.current = startRound;
-
-  const togglePause = () => {
-    if (!runnerRef.current || !engineRef.current || winner) return;
     if (paused) {
       Runner.run(runnerRef.current, engineRef.current);
       setPaused(false);
@@ -2781,61 +867,69 @@ export default function MarbleRace({
       Runner.stop(runnerRef.current);
       setPaused(true);
     }
-  };
+  }, [paused, seasonStarted, winner]);
 
-  const changeSpeed = (nextSpeed: 1 | 2 | 4) => {
-    speedRef.current = nextSpeed;
-    setSpeed(nextSpeed);
+  const restartSeason = useCallback(() => {
+    destroyWorld();
+    levelQueueRef.current = [];
+    lastLevelIdRef.current = null;
+    setSeasonStarted(false);
+    setStarted(false);
+    setPaused(false);
+    setWinner(null);
+    setAnnouncement(null);
+    setRound(1);
+    setQualifiedCount(0);
+    remainingRef.current = contestants;
+    eliminatedRef.current = [];
+    setRemaining(contestants);
+    setEliminated([]);
+  }, [contestants, destroyWorld]);
 
-    if (engineRef.current) {
-      engineRef.current.timing.timeScale = nextSpeed;
-    }
-  };
+  useEffect(() => {
+    mountedRef.current = true;
+    remainingRef.current = contestants;
+    eliminatedRef.current = [];
+    setRemaining(contestants);
+    setEliminated([]);
+
+    return () => {
+      mountedRef.current = false;
+      destroyWorld();
+    };
+  }, [contestants, destroyWorld]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.code !== "Space") return;
-
       const target = event.target as HTMLElement | null;
-      const tagName = target?.tagName;
-
       if (
-        tagName === "INPUT" ||
-        tagName === "TEXTAREA" ||
-        tagName === "BUTTON" ||
+        target?.tagName === "INPUT" ||
+        target?.tagName === "TEXTAREA" ||
+        target?.tagName === "BUTTON" ||
         target?.isContentEditable
       ) {
         return;
       }
 
       event.preventDefault();
-      startRoundRef.current();
+      if (!seasonStarted) beginSeason();
+      else if (!started && !winner) startRound();
     };
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, []);
+  }, [beginSeason, seasonStarted, startRound, started, winner]);
 
-  const restartSeason = () => {
-    remainingRef.current = contestants;
-    eliminatedRef.current = [];
-    setRemaining(contestants);
-    setEliminated([]);
-    setRound(1);
-    setWinner(null);
-    setAnnouncement(null);
-    setCountdown(null);
-    eliminationDisplayRef.current = null;
-    setEliminationDisplay(null);
-
-    destroyWorld();
-
-    rebuildFrameRef.current = requestAnimationFrame(() => {
-      rebuildFrameRef.current = null;
-      if (!mountedRef.current || !sceneRef.current) return;
-      buildRound(contestants, 1);
+  function toggleLevel(levelId: LevelId) {
+    if (seasonStarted) return;
+    setEnabledLevelIds((current) => {
+      const next = new Set(current);
+      if (next.has(levelId)) next.delete(levelId);
+      else next.add(levelId);
+      return next;
     });
-  };
+  }
 
   if (contestants.length < 2) {
     return (
@@ -2855,237 +949,162 @@ export default function MarbleRace({
             Round {round} · {remaining.length} marble
             {remaining.length === 1 ? "" : "s"} remaining
           </p>
+          {currentLevelName && seasonStarted && <p>Current level: {currentLevelName}</p>}
         </div>
 
         <div className={styles.controls}>
-          {!started && !winner && (
+          {!seasonStarted && (
             <button
               className={styles.startButton}
-              style={startButtonStyle}
-              onPointerDown={startRound}
+              onClick={beginSeason}
+              disabled={enabledLevelIds.size === 0}
             >
+              Load Season
+            </button>
+          )}
+
+          {seasonStarted && !started && !winner && (
+            <button className={styles.startButton} onClick={startRound}>
               Start Round
             </button>
           )}
-          <button
-            style={controlButtonStyle}
-            onClick={togglePause}
-            disabled={!!winner || countdown !== null}
-          >
-            {paused ? "Resume" : "Pause"}
-          </button>
-          <button
-            style={speed === 1 ? activeSpeedButtonStyle : controlButtonStyle}
-            onClick={() => changeSpeed(1)}
-            disabled={speed === 1}
-          >
-            1×
-          </button>
-          <button
-            style={speed === 2 ? activeSpeedButtonStyle : controlButtonStyle}
-            onClick={() => changeSpeed(2)}
-            disabled={speed === 2}
-          >
-            2×
-          </button>
-          <button
-            style={speed === 4 ? activeSpeedButtonStyle : controlButtonStyle}
-            onClick={() => changeSpeed(4)}
-            disabled={speed === 4}
-          >
-            4×
-          </button>
-          <button style={controlButtonStyle} onClick={restartSeason}>
-            Restart
-          </button>
+
+          {seasonStarted && (
+            <button onClick={togglePause} disabled={!!winner}>
+              {paused ? "Resume" : "Pause"}
+            </button>
+          )}
+
+          <button onClick={restartSeason}>Reset</button>
         </div>
       </div>
+
+      {!seasonStarted && (
+        <section
+          style={{
+            maxWidth: 1180,
+            margin: "0 auto 14px",
+            padding: 16,
+            border: "1px solid #334155",
+            borderRadius: 18,
+            background: "#111827",
+          }}
+        >
+          <h2 style={{ marginTop: 0 }}>Custom Levels</h2>
+          <p style={{ color: "#cbd5e1" }}>
+            Turn levels on or off. Enabled levels are shuffled into a new order
+            for each season and reshuffled when all enabled levels have been used.
+          </p>
+
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(230px, 1fr))",
+              gap: 12,
+            }}
+          >
+            {LEVELS.map((level) => {
+              const enabled = enabledLevelIds.has(level.id);
+              return (
+                <button
+                  key={level.id}
+                  type="button"
+                  onClick={() => toggleLevel(level.id)}
+                  style={{
+                    padding: 16,
+                    borderRadius: 14,
+                    border: enabled
+                      ? "3px solid #22c55e"
+                      : "3px solid #475569",
+                    background: enabled ? "#14532d" : "#1e293b",
+                    color: "#fff",
+                    textAlign: "left",
+                    cursor: "pointer",
+                    opacity: enabled ? 1 : 0.5,
+                  }}
+                >
+                  <strong style={{ display: "block", fontSize: 18 }}>
+                    {enabled ? "✓ " : "○ "}
+                    {level.name}
+                  </strong>
+                  <span
+                    style={{
+                      display: "block",
+                      marginTop: 6,
+                      color: "#dbeafe",
+                    }}
+                  >
+                    {level.description}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </section>
+      )}
 
       <div className={styles.statusRow}>
         <strong>
           Qualified: {qualifiedCount}/{Math.max(remaining.length - 1, 0)}
         </strong>
         <span>
-          {started
-            ? "Last marble to reach green is eliminated."
-            : "Marbles are shuffling inside the starting chamber."}
+          {!seasonStarted
+            ? "Choose the custom levels for this season."
+            : started
+              ? "The final marble that has not qualified is eliminated."
+              : "Marbles are shuffling inside the holding chamber."}
         </span>
       </div>
 
       <div className={styles.raceShell}>
         <div className={styles.canvas} ref={sceneRef} />
-        {countdown !== null && (
-          <div className={styles.pauseOverlay}>
-            {countdown === 0 ? "GO!" : countdown}
-          </div>
-        )}
+
         {paused && <div className={styles.pauseOverlay}>PAUSED</div>}
-        {eliminationDisplay && (
-          <div
-            style={{
-              position: "absolute",
-              inset: 0,
-              zIndex: 5,
-              pointerEvents: "none",
-              display: "flex",
-              flexDirection: "column",
-              alignItems: "center",
-              justifyContent: "flex-start",
-              paddingTop: "54px",
-              color: "#000000",
-              textAlign: "center",
-              textShadow: "0 2px 0 rgba(255,255,255,.9)",
-            }}
-          >
-            <div
-              style={{
-                maxWidth: "88%",
-                fontSize: "clamp(2.3rem, 6vw, 5.6rem)",
-                fontWeight: 1000,
-                lineHeight: 0.95,
-                overflowWrap: "anywhere",
-              }}
-            >
-              {eliminationDisplay.name}
-            </div>
-            <div
-              style={{
-                marginTop: "16px",
-                fontSize: "clamp(1.5rem, 3vw, 3rem)",
-                fontWeight: 950,
-              }}
-            >
-              Eliminated · {ordinal(eliminationDisplay.place)} Place
-            </div>
-          </div>
-        )}
+
         {announcement && (
           <div className={styles.announcement}>
             <div>{announcement}</div>
           </div>
         )}
+
+        {!seasonStarted && (
+          <div className={styles.announcement}>
+            <div>Select your levels, then click Load Season.</div>
+          </div>
+        )}
       </div>
 
       <div className={styles.bottomGrid}>
-        <section style={{ gridColumn: "1 / -1" }}>
-          <h2>Placements</h2>
+        <section>
+          <h2>Still Racing</h2>
+          <div className={styles.castGrid}>
+            {remaining.map((contestant) => (
+              <div className={styles.castCard} key={contestant.id}>
+                <img src={contestant.imageUrl} alt="" />
+                <span>{contestant.name}</span>
+              </div>
+            ))}
+          </div>
+        </section>
 
-          <div
-            style={{
-              display: "flex",
-              flexWrap: "wrap",
-              alignItems: "flex-start",
-              gap: "14px",
-            }}
-          >
+        <section>
+          <h2>Placements</h2>
+          <div className={styles.placements}>
             {winner && (
-              <div
-                style={{
-                  width: 76,
-                  display: "flex",
-                  flexDirection: "column",
-                  alignItems: "center",
-                  gap: 5,
-                  textAlign: "center",
-                }}
-              >
-                <div
-                  style={{
-                    width: MARBLE_RADIUS * 2,
-                    height: MARBLE_RADIUS * 2,
-                    overflow: "hidden",
-                    border: "3px solid #d97706",
-                    borderRadius: "50%",
-                    background: "#fef3c7",
-                    boxShadow: "0 2px 6px rgba(0,0,0,.25)",
-                  }}
-                >
-                  <img
-                    src={winner.imageUrl}
-                    alt=""
-                    style={{
-                      display: "block",
-                      width: "100%",
-                      height: "100%",
-                      objectFit: "cover",
-                    }}
-                  />
-                </div>
-                <strong style={{ color: "#fbbf24", fontSize: 13 }}>1st</strong>
-                <span
-                  title={winner.name}
-                  style={{
-                    width: "100%",
-                    overflow: "hidden",
-                    color: "#f8fafc",
-                    fontSize: 11,
-                    fontWeight: 800,
-                    lineHeight: 1.15,
-                    textOverflow: "ellipsis",
-                    whiteSpace: "nowrap",
-                  }}
-                >
-                  {winner.name}
-                </span>
+              <div className={styles.winnerRow}>
+                <strong>1st</strong>
+                <img src={winner.imageUrl} alt="" />
+                <span>{winner.name}</span>
               </div>
             )}
 
             {eliminated.map((contestant, index) => {
               const place = contestants.length - index;
               return (
-                <div
-                  key={contestant.id}
-                  style={{
-                    width: 76,
-                    display: "flex",
-                    flexDirection: "column",
-                    alignItems: "center",
-                    gap: 5,
-                    textAlign: "center",
-                  }}
-                >
-                  <div
-                    style={{
-                      width: MARBLE_RADIUS * 2,
-                      height: MARBLE_RADIUS * 2,
-                      overflow: "hidden",
-                      border: "3px solid #111827",
-                      borderRadius: "50%",
-                      background: "#dbeafe",
-                      boxShadow: "0 2px 6px rgba(0,0,0,.25)",
-                    }}
-                  >
-                    <img
-                      src={contestant.imageUrl}
-                      alt=""
-                      style={{
-                        display: "block",
-                        width: "100%",
-                        height: "100%",
-                        objectFit: "cover",
-                      }}
-                    />
-                  </div>
-
-                  <strong style={{ color: "#cbd5e1", fontSize: 13 }}>
-                    {ordinal(place)}
-                  </strong>
-
-                  <span
-                    title={contestant.name}
-                    style={{
-                      width: "100%",
-                      overflow: "hidden",
-                      color: "#f8fafc",
-                      fontSize: 11,
-                      fontWeight: 800,
-                      lineHeight: 1.15,
-                      textOverflow: "ellipsis",
-                      whiteSpace: "nowrap",
-                    }}
-                  >
-                    {contestant.name}
-                  </span>
+                <div key={contestant.id}>
+                  <strong>{ordinal(place)}</strong>
+                  <img src={contestant.imageUrl} alt="" />
+                  <span>{contestant.name}</span>
                 </div>
               );
             })}
