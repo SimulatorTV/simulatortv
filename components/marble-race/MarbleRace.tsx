@@ -72,6 +72,26 @@ const CATEGORY_MARBLE = 0x0001;
 const CATEGORY_STAGE = 0x0002;
 const CATEGORY_SENSOR = 0x0004;
 
+const buttonStyle: React.CSSProperties = {
+  minWidth: 112,
+  padding: "12px 18px",
+  border: "2px solid #111827",
+  borderRadius: 12,
+  background: "linear-gradient(180deg, #475569 0%, #1e293b 100%)",
+  color: "#ffffff",
+  fontSize: 15,
+  fontWeight: 900,
+  cursor: "pointer",
+  boxShadow: "0 4px 0 #0f172a, 0 8px 18px rgba(0,0,0,.3)",
+};
+
+const primaryButtonStyle: React.CSSProperties = {
+  ...buttonStyle,
+  background: "linear-gradient(180deg, #4ade80 0%, #16a34a 100%)",
+  color: "#052e16",
+  boxShadow: "0 4px 0 #166534, 0 8px 18px rgba(0,0,0,.3)",
+};
+
 function ordinal(value: number) {
   const mod100 = value % 100;
   if (mod100 >= 11 && mod100 <= 13) return `${value}th`;
@@ -163,6 +183,23 @@ function makeGreenFinish(x: number, y: number, width: number, height: number) {
   return body;
 }
 
+function makeFullFloorZone(kind: "red-reset" | "green-finish") {
+  const isGreen = kind === "green-finish";
+  const body = Bodies.rectangle(WIDTH / 2, FLOOR_Y - 9, WIDTH - 72, 38, {
+    isStatic: true,
+    isSensor: true,
+    collisionFilter: { category: CATEGORY_SENSOR, mask: CATEGORY_MARBLE },
+    render: {
+      fillStyle: isGreen ? "#22c55e" : "#ef4444",
+      strokeStyle: isGreen ? "#14532d" : "#7f1d1d",
+      lineWidth: 3,
+    },
+  }) as ObstacleBody;
+
+  body.plugin = { kind };
+  return body;
+}
+
 function makeResetBall(
   x: number,
   y: number,
@@ -234,31 +271,32 @@ function makeBaseStage() {
 
 function buildPaddleBowl() {
   const bodies = makeBaseStage();
+
+  // Open upper funnels direct every marble toward the paddles without sealing paths.
   bodies.push(
-    makeWall(235, 330, 430, 28, { angle: 0.31 }),
-    makeWall(865, 330, 430, 28, { angle: -0.31 }),
+    makeWall(245, 340, 410, 24, { angle: 0.27 }),
+    makeWall(855, 340, 410, 24, { angle: -0.27 }),
   );
 
-  [270, 460, 640, 830].forEach((x, index) => {
+  [280, 470, 630, 820].forEach((x, index) => {
     const spinner = makeSpinner(
       x,
-      530,
-      190,
-      index < 2 ? 0.085 : -0.085,
+      515,
+      165,
+      index < 2 ? 0.07 : -0.07,
       "#a3a3a3",
     );
-    Body.setAngle(spinner, index % 2 === 0 ? -1.15 : 1.15);
+    Body.setAngle(spinner, index % 2 === 0 ? -0.85 : 0.85);
     bodies.push(spinner);
   });
 
+  // Short guides leave wide gaps and feed the entire green floor.
   bodies.push(
-    makeWall(185, 625, 255, 22, { angle: 0.2 }),
-    makeWall(390, 650, 180, 22, { angle: -0.16 }),
-    makeWall(710, 650, 180, 22, { angle: 0.16 }),
-    makeWall(915, 625, 255, 22, { angle: -0.2 }),
-    makeGreenFinish(145, 744, 220, 42),
-    makeRedReset(550, 727, 175, 34),
-    makeGreenFinish(955, 744, 220, 42),
+    makeWall(205, 635, 250, 20, { angle: 0.13 }),
+    makeWall(440, 650, 205, 20, { angle: -0.11 }),
+    makeWall(660, 650, 205, 20, { angle: 0.11 }),
+    makeWall(895, 635, 250, 20, { angle: -0.13 }),
+    makeFullFloorZone("green-finish"),
   );
 
   return bodies;
@@ -266,17 +304,19 @@ function buildPaddleBowl() {
 
 function buildRisingResets() {
   const bodies = makeBaseStage();
+
+  // Two separate side ramps create an open middle lane instead of a blocking X.
   bodies.push(
-    makeWall(185, 395, 390, 30, { angle: 0.37 }),
-    makeWall(915, 395, 390, 30, { angle: -0.37 }),
-    makeWall(310, 600, 360, 26, { angle: 0.16 }),
-    makeWall(790, 600, 360, 26, { angle: -0.16 }),
-    makeWall(550, 500, 300, 34, { angle: 0.42 }),
-    makeWall(550, 500, 300, 34, { angle: -0.42 }),
-    makeResetBall(390, 690, 510, 700, 2.1),
-    makeResetBall(710, 570, 510, 700, 2.1),
-    makeGreenFinish(550, 746, 220, 42),
+    makeWall(235, 390, 360, 26, { angle: 0.28 }),
+    makeWall(865, 390, 360, 26, { angle: -0.28 }),
+    makeWall(275, 585, 330, 24, { angle: 0.12 }),
+    makeWall(825, 585, 330, 24, { angle: -0.12 }),
+    makeWall(550, 510, 190, 22, { angle: 0.08 }),
+    makeResetBall(385, 690, 500, 700, 2.0),
+    makeResetBall(715, 570, 500, 700, 2.0),
+    makeFullFloorZone("green-finish"),
   );
+
   return bodies;
 }
 
@@ -322,7 +362,8 @@ const LEVELS: LevelDefinition[] = [
   {
     id: "moving-bridge",
     name: "Moving Bridge",
-    description: "A moving center bridge splits the course between three exits.",
+    description:
+      "A moving center bridge splits the course between three exits.",
     build: buildMovingBridge,
   },
 ];
@@ -378,6 +419,9 @@ export default function MarbleRace({
   const [paused, setPaused] = useState(false);
   const [qualifiedCount, setQualifiedCount] = useState(0);
   const [announcement, setAnnouncement] = useState<string | null>(null);
+  const [eliminationNotice, setEliminationNotice] = useState<string | null>(
+    null,
+  );
   const [winner, setWinner] = useState<MarbleContestant | null>(null);
   const [currentLevelName, setCurrentLevelName] = useState("");
   const [seasonStarted, setSeasonStarted] = useState(false);
@@ -461,7 +505,9 @@ export default function MarbleRace({
     Body.setAngularVelocity(meta.body, (Math.random() - 0.5) * 0.2);
   }, []);
 
-  const resolveEliminationRef = useRef<(loser: MarbleContestant) => void>(() => {});
+  const resolveEliminationRef = useRef<(loser: MarbleContestant) => void>(
+    () => {},
+  );
 
   const buildRound = useCallback(
     (roundContestants: MarbleContestant[], roundNumber: number) => {
@@ -479,6 +525,7 @@ export default function MarbleRace({
       setPaused(false);
       setQualifiedCount(0);
       setAnnouncement(null);
+      setEliminationNotice(null);
       qualifiedRef.current.clear();
       roundStartedRef.current = false;
       roundResolvingRef.current = false;
@@ -550,7 +597,9 @@ export default function MarbleRace({
       Events.on(engine, "beforeUpdate", () => {
         const timestamp = engine.timing.timestamp;
 
-        for (const body of Composite.allBodies(engine.world) as ObstacleBody[]) {
+        for (const body of Composite.allBodies(
+          engine.world,
+        ) as ObstacleBody[]) {
           if (body.plugin?.rotateSpeed) {
             Body.setAngle(body, body.angle + body.plugin.rotateSpeed);
           }
@@ -677,7 +726,10 @@ export default function MarbleRace({
           context.clip();
 
           if (meta.image?.complete && meta.image.naturalWidth > 0) {
-            const sourceSize = Math.min(meta.image.naturalWidth, meta.image.naturalHeight);
+            const sourceSize = Math.min(
+              meta.image.naturalWidth,
+              meta.image.naturalHeight,
+            );
             const sourceX = (meta.image.naturalWidth - sourceSize) / 2;
             const sourceY = (meta.image.naturalHeight - sourceSize) / 2;
             context.drawImage(
@@ -774,9 +826,9 @@ export default function MarbleRace({
       }
 
       const place = remainingRef.current.length;
-      setAnnouncement(
-        `${loser.name} is eliminated, finishing in ${ordinal(place)} place.`,
-      );
+      const eliminationMessage = `${loser.name} is eliminated, finishing in ${ordinal(place)} place.`;
+      setAnnouncement(eliminationMessage);
+      setEliminationNotice(eliminationMessage);
 
       transitionTimerRef.current = setTimeout(() => {
         if (!mountedRef.current) return;
@@ -793,6 +845,7 @@ export default function MarbleRace({
         if (nextRemaining.length === 1) {
           const seasonWinner = nextRemaining[0];
           setWinner(seasonWinner);
+          setEliminationNotice(null);
           setAnnouncement(`${seasonWinner.name} wins the Marble Race!`);
           onSeasonFinished?.(seasonWinner, [seasonWinner, ...nextEliminated]);
           return;
@@ -832,6 +885,7 @@ export default function MarbleRace({
     setRound(1);
     setWinner(null);
     setAnnouncement(null);
+    setEliminationNotice(null);
     setSeasonStarted(true);
     buildRound(contestants, 1);
   }, [buildRound, contestants]);
@@ -878,6 +932,7 @@ export default function MarbleRace({
     setPaused(false);
     setWinner(null);
     setAnnouncement(null);
+    setEliminationNotice(null);
     setRound(1);
     setQualifiedCount(0);
     remainingRef.current = contestants;
@@ -939,6 +994,200 @@ export default function MarbleRace({
     );
   }
 
+  if (winner) {
+    const finalPlacements = [
+      winner,
+      ...eliminated,
+    ];
+
+    return (
+      <div className={styles.page}>
+        <div
+          style={{
+            maxWidth: 1180,
+            margin: "0 auto",
+            padding: "24px 18px 40px",
+          }}
+        >
+          <div
+            style={{
+              padding: 28,
+              border: "4px solid #facc15",
+              borderRadius: 24,
+              background:
+                "linear-gradient(180deg, #422006 0%, #111827 100%)",
+              textAlign: "center",
+              boxShadow: "0 18px 45px rgba(0,0,0,.4)",
+            }}
+          >
+            <div
+              style={{
+                color: "#fde68a",
+                fontSize: 18,
+                fontWeight: 1000,
+                letterSpacing: "0.14em",
+                textTransform: "uppercase",
+              }}
+            >
+              Marble Race Winner
+            </div>
+
+            <h1
+              style={{
+                margin: "10px 0 18px",
+                color: "#ffffff",
+                fontSize: "clamp(2.4rem, 6vw, 5rem)",
+                fontWeight: 1000,
+              }}
+            >
+              {winner.name}
+            </h1>
+
+            <div
+              style={{
+                width: 190,
+                height: 190,
+                margin: "0 auto 18px",
+                overflow: "hidden",
+                border: "8px solid #facc15",
+                borderRadius: "999px",
+                background: "#ffffff",
+                boxShadow:
+                  "0 0 0 8px rgba(250,204,21,.2), 0 16px 34px rgba(0,0,0,.45)",
+              }}
+            >
+              <img
+                src={winner.imageUrl}
+                alt={winner.name}
+                style={{
+                  width: "100%",
+                  height: "100%",
+                  objectFit: "cover",
+                }}
+              />
+            </div>
+
+            <div
+              style={{
+                color: "#fef3c7",
+                fontSize: 28,
+                fontWeight: 1000,
+              }}
+            >
+              1st Place
+            </div>
+
+            <button
+              type="button"
+              onClick={restartSeason}
+              style={{
+                ...primaryButtonStyle,
+                marginTop: 24,
+                minWidth: 180,
+              }}
+            >
+              Play Again
+            </button>
+          </div>
+
+          <section
+            style={{
+              marginTop: 22,
+              padding: 20,
+              border: "1px solid #334155",
+              borderRadius: 18,
+              background: "#111827",
+            }}
+          >
+            <h2
+              style={{
+                marginTop: 0,
+                color: "#ffffff",
+                textAlign: "center",
+              }}
+            >
+              Final Placements
+            </h2>
+
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns:
+                  "repeat(auto-fit, minmax(130px, 1fr))",
+                gap: 12,
+              }}
+            >
+              {finalPlacements.map((contestant, index) => (
+                <div
+                  key={contestant.id}
+                  style={{
+                    padding: 10,
+                    border:
+                      index === 0
+                        ? "3px solid #facc15"
+                        : "2px solid #475569",
+                    borderRadius: 14,
+                    background:
+                      index === 0 ? "#713f12" : "#1e293b",
+                    color: "#ffffff",
+                    textAlign: "center",
+                  }}
+                >
+                  <div
+                    style={{
+                      width: 82,
+                      height: 82,
+                      margin: "0 auto 8px",
+                      overflow: "hidden",
+                      border:
+                        index === 0
+                          ? "4px solid #facc15"
+                          : "3px solid #94a3b8",
+                      borderRadius: "999px",
+                      background: "#ffffff",
+                    }}
+                  >
+                    <img
+                      src={contestant.imageUrl}
+                      alt={contestant.name}
+                      style={{
+                        width: "100%",
+                        height: "100%",
+                        objectFit: "cover",
+                      }}
+                    />
+                  </div>
+
+                  <strong
+                    style={{
+                      display: "block",
+                      fontSize: 18,
+                    }}
+                  >
+                    {ordinal(index + 1)}
+                  </strong>
+
+                  <span
+                    style={{
+                      display: "block",
+                      marginTop: 3,
+                      overflow: "hidden",
+                      fontWeight: 900,
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {contestant.name}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </section>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className={styles.page}>
       <div className={styles.header}>
@@ -949,13 +1198,16 @@ export default function MarbleRace({
             Round {round} · {remaining.length} marble
             {remaining.length === 1 ? "" : "s"} remaining
           </p>
-          {currentLevelName && seasonStarted && <p>Current level: {currentLevelName}</p>}
+          {currentLevelName && seasonStarted && (
+            <p>Current level: {currentLevelName}</p>
+          )}
         </div>
 
         <div className={styles.controls}>
           {!seasonStarted && (
             <button
               className={styles.startButton}
+              style={primaryButtonStyle}
               onClick={beginSeason}
               disabled={enabledLevelIds.size === 0}
             >
@@ -964,18 +1216,28 @@ export default function MarbleRace({
           )}
 
           {seasonStarted && !started && !winner && (
-            <button className={styles.startButton} onClick={startRound}>
+            <button
+              className={styles.startButton}
+              style={primaryButtonStyle}
+              onClick={startRound}
+            >
               Start Round
             </button>
           )}
 
           {seasonStarted && (
-            <button onClick={togglePause} disabled={!!winner}>
+            <button
+              style={buttonStyle}
+              onClick={togglePause}
+              disabled={!!winner}
+            >
               {paused ? "Resume" : "Pause"}
             </button>
           )}
 
-          <button onClick={restartSeason}>Reset</button>
+          <button style={buttonStyle} onClick={restartSeason}>
+            Reset
+          </button>
         </div>
       </div>
 
@@ -993,7 +1255,8 @@ export default function MarbleRace({
           <h2 style={{ marginTop: 0 }}>Custom Levels</h2>
           <p style={{ color: "#cbd5e1" }}>
             Turn levels on or off. Enabled levels are shuffled into a new order
-            for each season and reshuffled when all enabled levels have been used.
+            for each season and reshuffled when all enabled levels have been
+            used.
           </p>
 
           <div
@@ -1013,9 +1276,11 @@ export default function MarbleRace({
                   style={{
                     padding: 16,
                     borderRadius: 14,
-                    border: enabled
-                      ? "3px solid #22c55e"
-                      : "3px solid #475569",
+                    minHeight: 116,
+                    boxShadow: enabled
+                      ? "0 5px 0 #052e16, 0 9px 20px rgba(0,0,0,.32)"
+                      : "0 5px 0 #0f172a, 0 9px 20px rgba(0,0,0,.32)",
+                    border: enabled ? "3px solid #22c55e" : "3px solid #475569",
                     background: enabled ? "#14532d" : "#1e293b",
                     color: "#fff",
                     textAlign: "left",
@@ -1067,6 +1332,30 @@ export default function MarbleRace({
           </div>
         )}
 
+        {eliminationNotice && (
+          <div
+            style={{
+              position: "absolute",
+              left: "50%",
+              bottom: 22,
+              transform: "translateX(-50%)",
+              zIndex: 12,
+              maxWidth: "90%",
+              padding: "12px 20px",
+              border: "3px solid #111827",
+              borderRadius: 12,
+              background: "#ffffff",
+              color: "#000000",
+              fontSize: 20,
+              fontWeight: 1000,
+              textAlign: "center",
+              boxShadow: "0 7px 20px rgba(0,0,0,.35)",
+            }}
+          >
+            {eliminationNotice}
+          </div>
+        )}
+
         {!seasonStarted && (
           <div className={styles.announcement}>
             <div>Select your levels, then click Load Season.</div>
@@ -1090,21 +1379,66 @@ export default function MarbleRace({
         <section>
           <h2>Placements</h2>
           <div className={styles.placements}>
-            {winner && (
-              <div className={styles.winnerRow}>
-                <strong>1st</strong>
-                <img src={winner.imageUrl} alt="" />
-                <span>{winner.name}</span>
-              </div>
-            )}
-
             {eliminated.map((contestant, index) => {
-              const place = contestants.length - index;
+              const place =
+                contestants.length - eliminated.length + 1 + index;
+
               return (
-                <div key={contestant.id}>
-                  <strong>{ordinal(place)}</strong>
-                  <img src={contestant.imageUrl} alt="" />
-                  <span>{contestant.name}</span>
+                <div
+                  key={contestant.id}
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "54px 54px minmax(0, 1fr)",
+                    alignItems: "center",
+                    gap: 10,
+                    minHeight: 64,
+                    padding: 8,
+                    borderRadius: 12,
+                    background: "#1e293b",
+                  }}
+                >
+                  <strong
+                    style={{
+                      color: "#ffffff",
+                      fontSize: 16,
+                      textAlign: "center",
+                    }}
+                  >
+                    {ordinal(place)}
+                  </strong>
+
+                  <div
+                    style={{
+                      width: 52,
+                      height: 52,
+                      overflow: "hidden",
+                      border: "3px solid #94a3b8",
+                      borderRadius: "999px",
+                      background: "#ffffff",
+                    }}
+                  >
+                    <img
+                      src={contestant.imageUrl}
+                      alt={contestant.name}
+                      style={{
+                        width: "100%",
+                        height: "100%",
+                        objectFit: "cover",
+                      }}
+                    />
+                  </div>
+
+                  <span
+                    style={{
+                      overflow: "hidden",
+                      color: "#ffffff",
+                      fontWeight: 900,
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {contestant.name}
+                  </span>
                 </div>
               );
             })}
