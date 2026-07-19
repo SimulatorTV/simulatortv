@@ -39,7 +39,8 @@ type LevelId =
   | "rising-resets"
   | "moving-bridge"
   | "plinko"
-  | "diamonds";
+  | "diamonds"
+  | "minefield";
 
 type LevelDefinition = {
   id: LevelId;
@@ -212,6 +213,30 @@ function makeCircleReset(x: number, y: number, radius: number) {
   }) as ObstacleBody;
 
   body.plugin = { kind: "red-reset" };
+  return body;
+}
+
+function makeMovingCircleReset(
+  x: number,
+  y: number,
+  radius: number,
+  axis: "x" | "y",
+  amplitude: number,
+  speed: number,
+  phase = 0,
+) {
+  const body = makeCircleReset(x, y, radius);
+
+  body.plugin = {
+    kind: "red-reset",
+    moveAxis: axis,
+    moveOriginX: x,
+    moveOriginY: y,
+    moveAmplitude: amplitude,
+    moveSpeed: speed,
+    movePhase: phase,
+  };
+
   return body;
 }
 
@@ -465,22 +490,21 @@ function buildDiamonds() {
       render: diamondColor,
     });
 
-  // Staggered rows create narrow but safe channels wider than one marble.
   const rows = [
     {
-      y: 330,
+      y: 320,
       xs: [145, 335, 525, 715, 905],
-      size: 88,
+      size: 86,
     },
     {
       y: 455,
       xs: [235, 430, 670, 865],
-      size: 96,
+      size: 94,
     },
     {
-      y: 585,
+      y: 590,
       xs: [145, 335, 525, 715, 905],
-      size: 88,
+      size: 86,
     },
   ];
 
@@ -490,18 +514,122 @@ function buildDiamonds() {
     });
   });
 
-  // Two circular red reset hazards appear from left to right among the paths.
+  // Four reset circles are vertically spread and sweep nearly edge to edge.
+  // Their phase offsets keep them separated rather than moving as one stack.
+  const sweepAmplitude = 485;
   bodies.push(
-    makeCircleReset(360, 515, 29),
-    makeCircleReset(740, 515, 29),
-  );
-
-  // Small side guides prevent marbles from resting against the outer walls.
-  bodies.push(
-    makeWall(82, 665, 130, 18, { angle: 0.14 }),
-    makeWall(WIDTH - 82, 665, 130, 18, { angle: -0.14 }),
+    makeMovingCircleReset(550, 365, 27, "x", sweepAmplitude, 0.0027, 0),
+    makeMovingCircleReset(
+      550,
+      445,
+      27,
+      "x",
+      sweepAmplitude,
+      0.0027,
+      Math.PI / 2,
+    ),
+    makeMovingCircleReset(
+      550,
+      525,
+      27,
+      "x",
+      sweepAmplitude,
+      0.0027,
+      Math.PI,
+    ),
+    makeMovingCircleReset(
+      550,
+      605,
+      27,
+      "x",
+      sweepAmplitude,
+      0.0027,
+      Math.PI * 1.5,
+    ),
     makeFullFloorZone("green-finish"),
   );
+
+  return bodies;
+}
+
+function buildMinefield() {
+  const bodies = makeBaseStage();
+
+  // Sparse bumpers split the fall into several routes without sealing any lane.
+  const bumperColor = {
+    fillStyle: "#475569",
+    strokeStyle: "#0f172a",
+    lineWidth: 3,
+  };
+
+  bodies.push(
+    makeWall(210, 350, 145, 18, {
+      angle: 0.22,
+      render: bumperColor,
+    }),
+    makeWall(890, 350, 145, 18, {
+      angle: -0.22,
+      render: bumperColor,
+    }),
+    makeWall(400, 515, 120, 18, {
+      angle: -0.18,
+      render: bumperColor,
+    }),
+    makeWall(700, 515, 120, 18, {
+      angle: 0.18,
+      render: bumperColor,
+    }),
+  );
+
+  // Horizontal sweepers occupy different rows with varied timing.
+  const horizontalHazards = [
+    { y: 300, radius: 23, speed: 0.0021, phase: 0 },
+    { y: 390, radius: 22, speed: 0.0026, phase: Math.PI * 0.65 },
+    { y: 480, radius: 24, speed: 0.0022, phase: Math.PI * 1.3 },
+    { y: 570, radius: 22, speed: 0.0028, phase: Math.PI * 1.85 },
+    { y: 660, radius: 24, speed: 0.0023, phase: Math.PI * 0.3 },
+  ];
+
+  horizontalHazards.forEach(({ y, radius, speed, phase }) => {
+    bodies.push(
+      makeMovingCircleReset(550, y, radius, "x", 480, speed, phase),
+    );
+  });
+
+  // Vertical hazards weave between the horizontal rows. They are narrow enough
+  // that open routes always remain around them.
+  bodies.push(
+    makeMovingCircleReset(
+      285,
+      490,
+      21,
+      "y",
+      205,
+      0.0024,
+      Math.PI / 4,
+    ),
+    makeMovingCircleReset(
+      550,
+      490,
+      21,
+      "y",
+      205,
+      0.0027,
+      Math.PI * 1.15,
+    ),
+    makeMovingCircleReset(
+      815,
+      490,
+      21,
+      "y",
+      205,
+      0.0022,
+      Math.PI * 1.7,
+    ),
+  );
+
+  // A completely green bottom rewards any marble that survives the field.
+  bodies.push(makeFullFloorZone("green-finish"));
 
   return bodies;
 }
@@ -537,8 +665,15 @@ const LEVELS: LevelDefinition[] = [
     id: "diamonds",
     name: "Diamonds",
     description:
-      "Slide through narrow diamond pathways while avoiding two red reset circles.",
+      "Thread the diamond pathways while four fast reset circles sweep across the course.",
     build: buildDiamonds,
+  },
+  {
+    id: "minefield",
+    name: "Minefield",
+    description:
+      "Navigate an open field of horizontal and vertical moving reset hazards.",
+    build: buildMinefield,
   },
 ];
 
