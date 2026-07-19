@@ -40,7 +40,8 @@ type LevelId =
   | "moving-bridge"
   | "plinko"
   | "diamonds"
-  | "minefield";
+  | "minefield"
+  | "pinball";
 
 type LevelDefinition = {
   id: LevelId;
@@ -63,6 +64,10 @@ type ObstacleBody = Matter.Body & {
     wrapMinY?: number;
     wrapMaxY?: number;
     wrapSpeed?: number;
+    bumperRadius?: number;
+    bumperStrength?: number;
+    bumperInterval?: number;
+    bumperLastFire?: number;
   };
 };
 
@@ -181,6 +186,40 @@ function makePeg(x: number, y: number, radius = 10) {
   }) as ObstacleBody;
 
   body.plugin = { kind: "stage" };
+  return body;
+}
+
+function makePinballBumper(
+  x: number,
+  y: number,
+  radius: number,
+  color: string,
+  strength = 0.018,
+) {
+  const body = Bodies.circle(x, y, radius, {
+    isStatic: true,
+    friction: 0,
+    frictionStatic: 0,
+    restitution: 1.22,
+    collisionFilter: {
+      category: CATEGORY_STAGE,
+      mask: CATEGORY_MARBLE,
+    },
+    render: {
+      fillStyle: color,
+      strokeStyle: "#111827",
+      lineWidth: 4,
+    },
+  }) as ObstacleBody;
+
+  body.plugin = {
+    kind: "stage",
+    bumperRadius: radius + 58,
+    bumperStrength: strength,
+    bumperInterval: 1200,
+    bumperLastFire: 0,
+  };
+
   return body;
 }
 
@@ -628,8 +667,97 @@ function buildMinefield() {
     ),
   );
 
+  // The Minefield side walls are also red reset zones.
+  bodies.push(
+    makeRedReset(42, 500, 28, 540),
+    makeRedReset(WIDTH - 42, 500, 28, 540),
+  );
+
   // A completely green bottom rewards any marble that survives the field.
   bodies.push(makeFullFloorZone("green-finish"));
+
+  return bodies;
+}
+
+function buildPinball() {
+  const bodies = makeBaseStage();
+
+  const railColor = {
+    fillStyle: "#334155",
+    strokeStyle: "#0f172a",
+    lineWidth: 3,
+  };
+
+  const slingColor = {
+    fillStyle: "#f59e0b",
+    strokeStyle: "#78350f",
+    lineWidth: 3,
+  };
+
+  // Outer pinball lanes guide marbles back toward the center.
+  bodies.push(
+    makeWall(135, 390, 250, 22, {
+      angle: 0.62,
+      render: railColor,
+    }),
+    makeWall(965, 390, 250, 22, {
+      angle: -0.62,
+      render: railColor,
+    }),
+    makeWall(185, 625, 250, 22, {
+      angle: 0.38,
+      render: railColor,
+    }),
+    makeWall(915, 625, 250, 22, {
+      angle: -0.38,
+      render: railColor,
+    }),
+  );
+
+  // Classic pop bumpers. Each one fires every 1.2 seconds and launches nearby marbles.
+  bodies.push(
+    makePinballBumper(330, 360, 42, "#ec4899", 0.020),
+    makePinballBumper(550, 325, 46, "#facc15", 0.021),
+    makePinballBumper(770, 360, 42, "#22d3ee", 0.020),
+    makePinballBumper(430, 500, 40, "#a855f7", 0.019),
+    makePinballBumper(670, 500, 40, "#4ade80", 0.019),
+  );
+
+  // Small posts create classic pinball lanes without trapping marbles.
+  [
+    [250, 470],
+    [550, 445],
+    [850, 470],
+    [310, 585],
+    [790, 585],
+  ].forEach(([x, y]) => {
+    bodies.push(makePeg(x, y, 12));
+  });
+
+  // Slingshots above the flippers knock marbles back into the bumper field.
+  bodies.push(
+    makeWall(380, 640, 185, 24, {
+      angle: 0.48,
+      render: slingColor,
+    }),
+    makeWall(720, 640, 185, 24, {
+      angle: -0.48,
+      render: slingColor,
+    }),
+  );
+
+  // Two rotating flippers leave a central escape lane to the green floor.
+  const leftFlipper = makeSpinner(455, 700, 185, 0.052, "#ef4444");
+  const rightFlipper = makeSpinner(645, 700, 185, -0.052, "#ef4444");
+  Body.setAngle(leftFlipper, 0.28);
+  Body.setAngle(rightFlipper, -0.28);
+
+  bodies.push(
+    leftFlipper,
+    rightFlipper,
+    makeCircleReset(550, 605, 25),
+    makeFullFloorZone("green-finish"),
+  );
 
   return bodies;
 }
@@ -672,8 +800,15 @@ const LEVELS: LevelDefinition[] = [
     id: "minefield",
     name: "Minefield",
     description:
-      "Navigate an open field of horizontal and vertical moving reset hazards.",
+      "Navigate an open field of moving hazards, including red reset side walls.",
     build: buildMinefield,
+  },
+  {
+    id: "pinball",
+    name: "Pinball",
+    description:
+      "Drop through pop bumpers, posts, slingshots, flippers, and a dangerous center reset.",
+    build: buildPinball,
   },
 ];
 
@@ -952,6 +1087,41 @@ export default function MarbleRace({
             let nextY = body.position.y - body.plugin.wrapSpeed;
             if (nextY < body.plugin.wrapMinY) nextY = body.plugin.wrapMaxY;
             Body.setPosition(body, { x: body.position.x, y: nextY });
+          }
+
+          if (
+            roundStartedRef.current &&
+            body.plugin?.bumperRadius !== undefined &&
+            body.plugin.bumperStrength !== undefined &&
+            body.plugin.bumperInterval !== undefined
+          ) {
+            const lastFire = body.plugin.bumperLastFire || 0;
+
+            if (timestamp - lastFire >= body.plugin.bumperInterval) {
+              body.plugin.bumperLastFire = timestamp;
+
+              for (const meta of marblesRef.current.values()) {
+                if (qualifiedRef.current.has(meta.contestant.id)) continue;
+
+                const deltaX = meta.body.position.x - body.position.x;
+                const deltaY = meta.body.position.y - body.position.y;
+                const distance = Math.hypot(deltaX, deltaY);
+
+                if (
+                  distance > 0 &&
+                  distance <= body.plugin.bumperRadius
+                ) {
+                  const forceScale =
+                    body.plugin.bumperStrength *
+                    (1 - distance / body.plugin.bumperRadius + 0.3);
+
+                  Body.applyForce(meta.body, meta.body.position, {
+                    x: (deltaX / distance) * forceScale,
+                    y: (deltaY / distance) * forceScale - 0.004,
+                  });
+                }
+              }
+            }
           }
         }
 
