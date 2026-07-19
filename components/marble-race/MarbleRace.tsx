@@ -313,12 +313,11 @@ function buildPaddleBowl() {
     bodies.push(spinner);
   });
 
-  // Short low ramps accelerate marbles toward the full green floor.
+  // Two shallow outer guides leave the entire middle open, preventing
+  // marbles from settling into divots between lower platforms.
   bodies.push(
-    makeWall(165, 645, 210, 18, { angle: 0.16 }),
-    makeWall(390, 670, 180, 18, { angle: -0.14 }),
-    makeWall(710, 670, 180, 18, { angle: 0.14 }),
-    makeWall(935, 645, 210, 18, { angle: -0.16 }),
+    makeWall(190, 645, 260, 18, { angle: 0.12 }),
+    makeWall(910, 645, 260, 18, { angle: -0.12 }),
     makeFullFloorZone("green-finish"),
   );
 
@@ -372,16 +371,11 @@ function buildMovingBridge() {
 function buildPlinko() {
   const bodies = makeBaseStage();
 
-  // Funnel the pack toward the peg field.
-  bodies.push(
-    makeWall(155, 295, 260, 20, { angle: 0.18 }),
-    makeWall(945, 295, 260, 20, { angle: -0.18 }),
-  );
-
-  const pegStartY = 330;
+  // The marbles fall directly from the holding chamber into the peg field.
+  const pegStartY = 300;
   const rowGap = 68;
   const colGap = 82;
-  const pegRows = 6;
+  const pegRows = 5;
 
   for (let row = 0; row < pegRows; row += 1) {
     const offset = row % 2 === 0 ? 0 : colGap / 2;
@@ -508,6 +502,9 @@ export default function MarbleRace({
   const [started, setStarted] = useState(false);
   const [paused, setPaused] = useState(false);
   const [qualifiedCount, setQualifiedCount] = useState(0);
+  const [qualifiedThisRound, setQualifiedThisRound] = useState<
+    MarbleContestant[]
+  >([]);
   const [announcement, setAnnouncement] = useState<string | null>(null);
   const [eliminationNotice, setEliminationNotice] = useState<string | null>(
     null,
@@ -614,6 +611,7 @@ export default function MarbleRace({
       setStarted(false);
       setPaused(false);
       setQualifiedCount(0);
+      setQualifiedThisRound([]);
       setAnnouncement(null);
       setEliminationNotice(null);
       qualifiedRef.current.clear();
@@ -792,6 +790,13 @@ export default function MarbleRace({
           if (sensorBody.plugin.kind === "green-finish") {
             qualifiedRef.current.add(meta.contestant.id);
             setQualifiedCount(qualifiedRef.current.size);
+            setQualifiedThisRound((current) =>
+              current.some(
+                (contestant) => contestant.id === meta.contestant.id,
+              )
+                ? current
+                : [...current, meta.contestant],
+            );
             Composite.remove(engine.world, marbleBody);
 
             if (
@@ -986,6 +991,7 @@ export default function MarbleRace({
     setEliminated([]);
     setRound(1);
     setWinner(null);
+    setQualifiedThisRound([]);
     setAnnouncement(null);
     setEliminationNotice(null);
     setSeasonStarted(true);
@@ -1037,6 +1043,7 @@ export default function MarbleRace({
     setEliminationNotice(null);
     setRound(1);
     setQualifiedCount(0);
+    setQualifiedThisRound([]);
     remainingRef.current = contestants;
     eliminatedRef.current = [];
     setRemaining(contestants);
@@ -1467,15 +1474,57 @@ export default function MarbleRace({
 
       <div className={styles.bottomGrid}>
         <section>
-          <h2>Still Racing</h2>
-          <div className={styles.castGrid}>
-            {remaining.map((contestant) => (
-              <div className={styles.castCard} key={contestant.id}>
-                <img src={contestant.imageUrl} alt="" />
-                <span>{contestant.name}</span>
-              </div>
-            ))}
-          </div>
+          <h2>Qualified This Round</h2>
+
+          {qualifiedThisRound.length === 0 ? (
+            <div
+              style={{
+                padding: 18,
+                border: "2px dashed #475569",
+                borderRadius: 12,
+                color: "#94a3b8",
+                textAlign: "center",
+                fontWeight: 800,
+              }}
+            >
+              No marbles have qualified yet.
+            </div>
+          ) : (
+            <div
+              style={{
+                display: "flex",
+                flexWrap: "wrap",
+                gap: 10,
+                alignItems: "center",
+              }}
+            >
+              {qualifiedThisRound.map((contestant) => (
+                <div
+                  key={contestant.id}
+                  title={contestant.name}
+                  style={{
+                    width: 52,
+                    height: 52,
+                    overflow: "hidden",
+                    border: "3px solid #22c55e",
+                    borderRadius: "999px",
+                    background: "#ffffff",
+                    boxShadow: "0 4px 10px rgba(0,0,0,.28)",
+                  }}
+                >
+                  <img
+                    src={contestant.imageUrl}
+                    alt={contestant.name}
+                    style={{
+                      width: "100%",
+                      height: "100%",
+                      objectFit: "cover",
+                    }}
+                  />
+                </div>
+              ))}
+            </div>
+          )}
         </section>
 
         <section>
