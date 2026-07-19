@@ -41,7 +41,7 @@ type LevelId =
   | "plinko"
   | "diamonds"
   | "minefield"
-  | "pinball";
+  | "column-rush";
 
 type LevelDefinition = {
   id: LevelId;
@@ -64,10 +64,12 @@ type ObstacleBody = Matter.Body & {
     wrapMinY?: number;
     wrapMaxY?: number;
     wrapSpeed?: number;
-    bumperRadius?: number;
-    bumperStrength?: number;
-    bumperInterval?: number;
-    bumperLastFire?: number;
+    pulseColumn?: boolean;
+    pulseTopY?: number;
+    pulseBottomY?: number;
+    pulseCycleMs?: number;
+    pulseTravelMs?: number;
+    pulsePhaseMs?: number;
   };
 };
 
@@ -189,40 +191,6 @@ function makePeg(x: number, y: number, radius = 10) {
   return body;
 }
 
-function makePinballBumper(
-  x: number,
-  y: number,
-  radius: number,
-  color: string,
-  strength = 0.018,
-) {
-  const body = Bodies.circle(x, y, radius, {
-    isStatic: true,
-    friction: 0,
-    frictionStatic: 0,
-    restitution: 1.22,
-    collisionFilter: {
-      category: CATEGORY_STAGE,
-      mask: CATEGORY_MARBLE,
-    },
-    render: {
-      fillStyle: color,
-      strokeStyle: "#111827",
-      lineWidth: 4,
-    },
-  }) as ObstacleBody;
-
-  body.plugin = {
-    kind: "stage",
-    bumperRadius: radius + 58,
-    bumperStrength: strength,
-    bumperInterval: 1200,
-    bumperLastFire: 0,
-  };
-
-  return body;
-}
-
 function makeRedReset(x: number, y: number, width: number, height: number) {
   const body = Bodies.rectangle(x, y, width, height, {
     isStatic: true,
@@ -274,6 +242,30 @@ function makeMovingCircleReset(
     moveAmplitude: amplitude,
     moveSpeed: speed,
     movePhase: phase,
+  };
+
+  return body;
+}
+
+function makeColumnPulseReset(
+  x: number,
+  width: number,
+  topY: number,
+  bottomY: number,
+  phaseMs: number,
+) {
+  const body = makeRedReset(x, bottomY, width, 34);
+
+  body.render.visible = false;
+  body.collisionFilter.mask = 0;
+  body.plugin = {
+    kind: "red-reset",
+    pulseColumn: true,
+    pulseTopY: topY,
+    pulseBottomY: bottomY,
+    pulseCycleMs: 6000,
+    pulseTravelMs: 1000,
+    pulsePhaseMs: phaseMs,
   };
 
   return body;
@@ -679,85 +671,70 @@ function buildMinefield() {
   return bodies;
 }
 
-function buildPinball() {
+function buildColumnRush() {
   const bodies = makeBaseStage();
 
-  const railColor = {
-    fillStyle: "#334155",
-    strokeStyle: "#0f172a",
-    lineWidth: 3,
+  const innerLeft = 36;
+  const innerRight = WIDTH - 36;
+  const columnCount = 13;
+  const columnWidth = (innerRight - innerLeft) / columnCount;
+  const dividerWidth = 10;
+  const dividerTopY = START_Y + START_HEIGHT + 28;
+  const dividerBottomY = FLOOR_Y - 34;
+  const dividerHeight = dividerBottomY - dividerTopY;
+  const capRadius = 16;
+
+  const dividerRender = {
+    fillStyle: "#64748b",
+    strokeStyle: "#1e293b",
+    lineWidth: 2,
   };
 
-  const slingColor = {
-    fillStyle: "#f59e0b",
-    strokeStyle: "#78350f",
-    lineWidth: 3,
-  };
+  // Straight vertical lanes with rounded semicircle-style tops.
+  for (let index = 1; index < columnCount; index += 1) {
+    const x = innerLeft + columnWidth * index;
 
-  // Outer pinball lanes guide marbles back toward the center.
-  bodies.push(
-    makeWall(135, 390, 250, 22, {
-      angle: 0.62,
-      render: railColor,
-    }),
-    makeWall(965, 390, 250, 22, {
-      angle: -0.62,
-      render: railColor,
-    }),
-    makeWall(185, 625, 250, 22, {
-      angle: 0.38,
-      render: railColor,
-    }),
-    makeWall(915, 625, 250, 22, {
-      angle: -0.38,
-      render: railColor,
-    }),
-  );
+    bodies.push(
+      makeWall(
+        x,
+        dividerTopY + dividerHeight / 2,
+        dividerWidth,
+        dividerHeight,
+        { render: dividerRender },
+      ),
+    );
 
-  // Classic pop bumpers. Each one fires every 1.2 seconds and launches nearby marbles.
-  bodies.push(
-    makePinballBumper(330, 360, 42, "#ec4899", 0.020),
-    makePinballBumper(550, 325, 46, "#facc15", 0.021),
-    makePinballBumper(770, 360, 42, "#22d3ee", 0.020),
-    makePinballBumper(430, 500, 40, "#a855f7", 0.019),
-    makePinballBumper(670, 500, 40, "#4ade80", 0.019),
-  );
+    const cap = Bodies.circle(x, dividerTopY, capRadius, {
+      isStatic: true,
+      friction: 0,
+      frictionStatic: 0,
+      restitution: 0.96,
+      collisionFilter: {
+        category: CATEGORY_STAGE,
+        mask: CATEGORY_MARBLE,
+      },
+      render: dividerRender,
+    }) as ObstacleBody;
+    cap.plugin = { kind: "stage" };
+    bodies.push(cap);
+  }
 
-  // Small posts create classic pinball lanes without trapping marbles.
-  [
-    [250, 470],
-    [550, 445],
-    [850, 470],
-    [310, 585],
-    [790, 585],
-  ].forEach(([x, y]) => {
-    bodies.push(makePeg(x, y, 12));
-  });
+  // Each narrow lane has its own green finish and timed red upward sweep.
+  for (let index = 0; index < columnCount; index += 1) {
+    const centerX = innerLeft + columnWidth * index + columnWidth / 2;
+    const usableWidth = columnWidth - dividerWidth - 5;
 
-  // Slingshots above the flippers knock marbles back into the bumper field.
-  bodies.push(
-    makeWall(380, 640, 185, 24, {
-      angle: 0.48,
-      render: slingColor,
-    }),
-    makeWall(720, 640, 185, 24, {
-      angle: -0.48,
-      render: slingColor,
-    }),
-  );
-
-  // Two rotating flippers leave a central escape lane to the green floor.
-  const leftFlipper = makeSpinner(455, 700, 185, 0.052, "#ef4444");
-  const rightFlipper = makeSpinner(645, 700, 185, -0.052, "#ef4444");
-  Body.setAngle(leftFlipper, 0.28);
-  Body.setAngle(rightFlipper, -0.28);
-
-  bodies.push(
-    leftFlipper,
-    rightFlipper,
-    makeCircleReset(550, 605, 25),
-    makeFullFloorZone("green-finish"),
-  );
+    bodies.push(
+      makeGreenFinish(centerX, FLOOR_Y - 9, usableWidth, 38),
+      makeColumnPulseReset(
+        centerX,
+        usableWidth,
+        dividerTopY + 20,
+        FLOOR_Y - 54,
+        (index * 430) % 6000,
+      ),
+    );
+  }
 
   return bodies;
 }
@@ -804,31 +781,30 @@ const LEVELS: LevelDefinition[] = [
     build: buildMinefield,
   },
   {
-    id: "pinball",
-    name: "Pinball",
+    id: "column-rush",
+    name: "Column Rush",
     description:
-      "Drop through pop bumpers, posts, slingshots, flippers, and a dangerous center reset.",
-    build: buildPinball,
+      "Choose a narrow vertical lane and dodge red sweeps that rocket upward every six seconds.",
+    build: buildColumnRush,
   },
 ];
 
 function makeSpawnPositions(count: number) {
-  const columns = Math.max(
-    1,
-    Math.floor((START_WIDTH - 80) / (MARBLE_RADIUS * 2 + 14)),
-  );
   const positions: Array<{ x: number; y: number }> = [];
+  const padding = MARBLE_RADIUS + 8;
+  const minX = START_X + padding;
+  const maxX = START_X + START_WIDTH - padding;
+  const minY = START_Y + padding;
+  const maxY = START_Y + START_HEIGHT - MARBLE_RADIUS - 10;
 
   for (let index = 0; index < count; index += 1) {
-    const column = index % columns;
-    const row = Math.floor(index / columns);
     positions.push({
-      x: START_X + 55 + column * (MARBLE_RADIUS * 2 + 14),
-      y: START_Y + 48 + row * (MARBLE_RADIUS * 2 + 12),
+      x: minX + Math.random() * Math.max(1, maxX - minX),
+      y: minY + Math.random() * Math.max(1, maxY - minY),
     });
   }
 
-  return shuffled(positions);
+  return positions;
 }
 
 export default function MarbleRace({
@@ -1090,47 +1066,89 @@ export default function MarbleRace({
           }
 
           if (
-            roundStartedRef.current &&
-            body.plugin?.bumperRadius !== undefined &&
-            body.plugin.bumperStrength !== undefined &&
-            body.plugin.bumperInterval !== undefined
+            body.plugin?.pulseColumn &&
+            body.plugin.pulseTopY !== undefined &&
+            body.plugin.pulseBottomY !== undefined &&
+            body.plugin.pulseCycleMs !== undefined &&
+            body.plugin.pulseTravelMs !== undefined
           ) {
-            const lastFire = body.plugin.bumperLastFire || 0;
+            const phase = body.plugin.pulsePhaseMs || 0;
+            const cycleTime =
+              (timestamp + phase) % body.plugin.pulseCycleMs;
+            const active =
+              roundStartedRef.current &&
+              cycleTime < body.plugin.pulseTravelMs;
 
-            if (timestamp - lastFire >= body.plugin.bumperInterval) {
-              body.plugin.bumperLastFire = timestamp;
+            body.render.visible = active;
+            body.collisionFilter.mask = active ? CATEGORY_MARBLE : 0;
 
-              for (const meta of marblesRef.current.values()) {
-                if (qualifiedRef.current.has(meta.contestant.id)) continue;
+            if (active) {
+              const progress = cycleTime / body.plugin.pulseTravelMs;
+              const nextY =
+                body.plugin.pulseBottomY -
+                (body.plugin.pulseBottomY - body.plugin.pulseTopY) * progress;
 
-                const deltaX = meta.body.position.x - body.position.x;
-                const deltaY = meta.body.position.y - body.position.y;
-                const distance = Math.hypot(deltaX, deltaY);
-
-                if (
-                  distance > 0 &&
-                  distance <= body.plugin.bumperRadius
-                ) {
-                  const forceScale =
-                    body.plugin.bumperStrength *
-                    (1 - distance / body.plugin.bumperRadius + 0.3);
-
-                  Body.applyForce(meta.body, meta.body.position, {
-                    x: (deltaX / distance) * forceScale,
-                    y: (deltaY / distance) * forceScale - 0.004,
-                  });
-                }
-              }
+              Body.setPosition(body, {
+                x: body.position.x,
+                y: nextY,
+              });
+            } else {
+              Body.setPosition(body, {
+                x: body.position.x,
+                y: body.plugin.pulseBottomY,
+              });
             }
           }
         }
 
         if (!roundStartedRef.current) {
-          for (const meta of marblesRef.current.values()) {
+          const activeMarbles = [...marblesRef.current.values()];
+
+          for (const meta of activeMarbles) {
             Body.applyForce(meta.body, meta.body.position, {
-              x: (Math.random() - 0.5) * 0.0008,
-              y: (Math.random() - 0.5) * 0.00025,
+              x: (Math.random() - 0.5) * 0.0007,
+              y: (Math.random() - 0.5) * 0.0002,
             });
+          }
+
+          // Overlapping random spawns naturally spread out before the gate opens.
+          for (let first = 0; first < activeMarbles.length; first += 1) {
+            for (
+              let second = first + 1;
+              second < activeMarbles.length;
+              second += 1
+            ) {
+              const bodyA = activeMarbles[first].body;
+              const bodyB = activeMarbles[second].body;
+              const deltaX = bodyB.position.x - bodyA.position.x;
+              const deltaY = bodyB.position.y - bodyA.position.y;
+              const distance = Math.hypot(deltaX, deltaY);
+              const separationDistance = MARBLE_RADIUS * 2.2;
+
+              if (distance < separationDistance) {
+                const safeDistance = Math.max(distance, 0.5);
+                const overlapStrength =
+                  (separationDistance - safeDistance) / separationDistance;
+                const force = 0.0014 * overlapStrength;
+                const normalX =
+                  distance < 0.5
+                    ? Math.cos((first + second) * 1.7)
+                    : deltaX / safeDistance;
+                const normalY =
+                  distance < 0.5
+                    ? Math.sin((first + second) * 1.7)
+                    : deltaY / safeDistance;
+
+                Body.applyForce(bodyA, bodyA.position, {
+                  x: -normalX * force,
+                  y: -normalY * force,
+                });
+                Body.applyForce(bodyB, bodyB.position, {
+                  x: normalX * force,
+                  y: normalY * force,
+                });
+              }
+            }
           }
         } else {
           for (const meta of marblesRef.current.values()) {
