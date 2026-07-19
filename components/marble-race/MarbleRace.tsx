@@ -76,6 +76,7 @@ type ObstacleBody = Matter.Body & {
     glueDirection?: -1 | 1;
     glueSpeed?: number;
     glueNextLaunch?: number;
+    glueLength?: number;
   };
 };
 
@@ -283,7 +284,12 @@ function makeGlueLine(
   speed: number,
   launchDelay: number,
 ) {
-  const body = Bodies.rectangle(WIDTH / 2, y, 165, 13, {
+  // The inner edge begins flush with the center divider, so a right-moving
+  // bar exists only on the right half and a left-moving bar only on the left.
+  const length = 165;
+  const startX = WIDTH / 2 + direction * (length / 2 + 12);
+
+  const body = Bodies.rectangle(startX, y, length, 13, {
     isStatic: true,
     friction: 0.9,
     frictionStatic: 1,
@@ -305,6 +311,7 @@ function makeGlueLine(
     glueDirection: direction,
     glueSpeed: speed,
     glueNextLaunch: launchDelay,
+    glueLength: length,
   };
 
   return body;
@@ -448,53 +455,16 @@ function buildPaddleBowl() {
 function buildRisingResets() {
   const bodies = makeBaseStage();
 
-  const chokeGap = MARBLE_RADIUS * 3; // 72px = 1.5 marble diameters.
-  const centerX = WIDTH / 2;
-
-  // Upper side ramps connect to their walls. Their inner tips leave a
-  // 72px opening around the shallow center V below.
-  const upperInnerLeft = centerX - chokeGap / 2;
-  const upperInnerRight = centerX + chokeGap / 2;
-  const upperLeftCenter = (36 + upperInnerLeft) / 2;
-  const upperRightCenter = (WIDTH - 36 + upperInnerRight) / 2;
-  const upperLeftLength = upperInnerLeft - 36;
-  const upperRightLength = WIDTH - 36 - upperInnerRight;
-
-  // The middle obstacle is a very shallow upside-down V.
-  const vHalfLength = 155;
-  const vAngle = 0.055;
-
-  // Lower side ramps also preserve 72px chokepoints around the center.
-  const lowerLeftInner = centerX - vHalfLength - chokeGap;
-  const lowerRightInner = centerX + vHalfLength + chokeGap;
-
+  // Keep the established Rising Resets layout. Only the center platform is
+  // split into a very shallow upside-down V.
   bodies.push(
-    makeWall(upperLeftCenter, 388, upperLeftLength, 26, {
-      angle: 0.18,
-    }),
-    makeWall(upperRightCenter, 388, upperRightLength, 26, {
-      angle: -0.18,
-    }),
+    makeWall(165, 390, 500, 26, { angle: 0.28 }),
+    makeWall(935, 390, 500, 26, { angle: -0.28 }),
+    makeWall(275, 585, 330, 24, { angle: 0.12 }),
+    makeWall(825, 585, 330, 24, { angle: -0.12 }),
 
-    makeWall(centerX - vHalfLength / 2, 510, vHalfLength, 22, {
-      angle: -vAngle,
-    }),
-    makeWall(centerX + vHalfLength / 2, 510, vHalfLength, 22, {
-      angle: vAngle,
-    }),
-
-    makeWall((36 + lowerLeftInner) / 2, 590, lowerLeftInner - 36, 24, {
-      angle: 0.1,
-    }),
-    makeWall(
-      (WIDTH - 36 + lowerRightInner) / 2,
-      590,
-      WIDTH - 36 - lowerRightInner,
-      24,
-      {
-        angle: -0.1,
-      },
-    ),
+    makeWall(502.5, 510, 95, 22, { angle: -0.045 }),
+    makeWall(597.5, 510, 95, 22, { angle: 0.045 }),
 
     makeResetBall(385, 690, 500, 700, 2.0),
     makeResetBall(715, 570, 500, 700, 2.0),
@@ -938,7 +908,7 @@ const LEVELS: LevelDefinition[] = [
   {
     id: "rising-resets",
     name: "Rising Resets",
-    description: "Two reset balls rise through 1.5-marble chokepoints and a shallow center V.",
+    description: "Two red reset balls circulate through a broad obstacle bowl with a shallow center V.",
     build: buildRisingResets,
   },
   {
@@ -1321,36 +1291,62 @@ export default function MarbleRace({
           ) {
             const launchTime = body.plugin.glueNextLaunch || 0;
             const active = roundStartedRef.current && timestamp >= launchTime;
+            const direction = body.plugin.glueDirection;
+            const speed = body.plugin.glueSpeed;
+            const length = body.plugin.glueLength || 165;
 
             body.render.visible = active;
             body.collisionFilter.mask = active ? CATEGORY_MARBLE : 0;
 
             if (active) {
-              const nextX =
-                body.position.x +
-                body.plugin.glueDirection * body.plugin.glueSpeed;
+              const nextX = body.position.x + direction * speed;
               Body.setPosition(body, { x: nextX, y: body.position.y });
 
+              // The bar vanishes once its outside edge reaches its side wall.
+              const outsideEdge =
+                nextX + direction * (length / 2);
               const reachedEdge =
-                (body.plugin.glueDirection < 0 && nextX <= 72) ||
-                (body.plugin.glueDirection > 0 && nextX >= WIDTH - 72);
+                (direction < 0 && outsideEdge <= 54) ||
+                (direction > 0 && outsideEdge >= WIDTH - 54);
 
               if (reachedEdge) {
+                // Release attached marbles with the bar's horizontal momentum.
+                // They continue toward the same wall even after the bar vanishes.
                 for (const [marbleId, glued] of gluedMarblesRef.current) {
-                  if (glued.platformId === body.id) {
-                    gluedMarblesRef.current.delete(marbleId);
+                  if (glued.platformId !== body.id) continue;
+
+                  const meta = marblesRef.current.get(marbleId);
+                  if (meta) {
+                    Body.setVelocity(meta.body, {
+                      x: direction * speed,
+                      y: meta.body.velocity.y,
+                    });
+                    Body.setAngularVelocity(
+                      meta.body,
+                      direction * 0.08,
+                    );
                   }
+
+                  gluedMarblesRef.current.delete(marbleId);
                 }
 
                 body.render.visible = false;
                 body.collisionFilter.mask = 0;
-                body.plugin.glueDirection = Math.random() < 0.5 ? -1 : 1;
-                body.plugin.glueSpeed = 3.2 + Math.random() * 5.4;
+
+                const nextDirection: -1 | 1 =
+                  Math.random() < 0.5 ? -1 : 1;
+                const nextSpeed = 3.2 + Math.random() * 5.4;
+
+                body.plugin.glueDirection = nextDirection;
+                body.plugin.glueSpeed = nextSpeed;
                 body.plugin.glueNextLaunch =
                   timestamp + 120 + Math.random() * 520;
 
+                // Relaunch flush against the correct side of the center divider.
                 Body.setPosition(body, {
-                  x: WIDTH / 2,
+                  x:
+                    WIDTH / 2 +
+                    nextDirection * (length / 2 + 12),
                   y: 315 + Math.random() * 385,
                 });
               }
@@ -1380,7 +1376,15 @@ export default function MarbleRace({
             x: platform.position.x + glued.offsetX,
             y: platform.position.y + glued.offsetY,
           });
-          Body.setVelocity(meta.body, { x: 0, y: 0 });
+
+          const gluePlatform = platform as ObstacleBody;
+          const glueDirection = gluePlatform.plugin?.glueDirection || 0;
+          const glueSpeed = gluePlatform.plugin?.glueSpeed || 0;
+
+          Body.setVelocity(meta.body, {
+            x: glueDirection * glueSpeed,
+            y: 0,
+          });
           Body.setAngularVelocity(meta.body, 0);
         }
 
