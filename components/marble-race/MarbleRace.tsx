@@ -283,7 +283,7 @@ function makeGlueLine(
   speed: number,
   launchDelay: number,
 ) {
-  const body = Bodies.rectangle(WIDTH / 2, y, 235, 13, {
+  const body = Bodies.rectangle(WIDTH / 2, y, 165, 13, {
     isStatic: true,
     friction: 0.9,
     frictionStatic: 1,
@@ -448,13 +448,54 @@ function buildPaddleBowl() {
 function buildRisingResets() {
   const bodies = makeBaseStage();
 
-  // Two separate side ramps create an open middle lane instead of a blocking X.
+  const chokeGap = MARBLE_RADIUS * 3; // 72px = 1.5 marble diameters.
+  const centerX = WIDTH / 2;
+
+  // Upper side ramps connect to their walls. Their inner tips leave a
+  // 72px opening around the shallow center V below.
+  const upperInnerLeft = centerX - chokeGap / 2;
+  const upperInnerRight = centerX + chokeGap / 2;
+  const upperLeftCenter = (36 + upperInnerLeft) / 2;
+  const upperRightCenter = (WIDTH - 36 + upperInnerRight) / 2;
+  const upperLeftLength = upperInnerLeft - 36;
+  const upperRightLength = WIDTH - 36 - upperInnerRight;
+
+  // The middle obstacle is a very shallow upside-down V.
+  const vHalfLength = 155;
+  const vAngle = 0.055;
+
+  // Lower side ramps also preserve 72px chokepoints around the center.
+  const lowerLeftInner = centerX - vHalfLength - chokeGap;
+  const lowerRightInner = centerX + vHalfLength + chokeGap;
+
   bodies.push(
-    makeWall(165, 390, 500, 26, { angle: 0.28 }),
-    makeWall(935, 390, 500, 26, { angle: -0.28 }),
-    makeWall(275, 585, 330, 24, { angle: 0.12 }),
-    makeWall(825, 585, 330, 24, { angle: -0.12 }),
-    makeWall(550, 510, 190, 22, { angle: 0.08 }),
+    makeWall(upperLeftCenter, 388, upperLeftLength, 26, {
+      angle: 0.18,
+    }),
+    makeWall(upperRightCenter, 388, upperRightLength, 26, {
+      angle: -0.18,
+    }),
+
+    makeWall(centerX - vHalfLength / 2, 510, vHalfLength, 22, {
+      angle: -vAngle,
+    }),
+    makeWall(centerX + vHalfLength / 2, 510, vHalfLength, 22, {
+      angle: vAngle,
+    }),
+
+    makeWall((36 + lowerLeftInner) / 2, 590, lowerLeftInner - 36, 24, {
+      angle: 0.1,
+    }),
+    makeWall(
+      (WIDTH - 36 + lowerRightInner) / 2,
+      590,
+      WIDTH - 36 - lowerRightInner,
+      24,
+      {
+        angle: -0.1,
+      },
+    ),
+
     makeResetBall(385, 690, 500, 700, 2.0),
     makeResetBall(715, 570, 500, 700, 2.0),
     makeFullFloorZone("green-finish"),
@@ -788,7 +829,7 @@ function buildStaircase() {
   };
 
   // This long wall begins directly beneath the gate on the right and slopes
-  // down toward the left, naturally feeding the marbles onto the staircase.
+  // down toward the left, naturally feeding marbles onto the staircase.
   bodies.push(
     makeWall(815, 315, 560, 24, {
       angle: -0.24,
@@ -802,40 +843,23 @@ function buildStaircase() {
   const firstStepX = 76;
   const firstStepY = 405;
   const stepDrop = 48;
-  const stepCount = 8;
+  const visibleStepCount = 7;
 
-  // Marble-wide stair tops with gaps that are 1.5 marbles wide.
-  for (let index = 0; index < stepCount; index += 1) {
+  // Seven marble-wide stair tops descend toward the green finish.
+  // The gaps remain open; there are no floating red hazard rectangles.
+  for (let index = 0; index < visibleStepCount; index += 1) {
     const stepX = firstStepX + index * pitch;
     const stepY = firstStepY + index * stepDrop;
 
-    if (index < stepCount - 1) {
     bodies.push(
       makeWall(stepX, stepY, stepWidth, 18, {
         render: stairColor,
       }),
     );
-    }
-
-    // Every gap has a red reset zone underneath it.
-    if (index < stepCount - 1) {
-      const nextStepX = firstStepX + (index + 1) * pitch;
-      const gapCenterX =
-        (stepX + stepWidth / 2 + nextStepX - stepWidth / 2) / 2;
-
-      bodies.push(
-        makeRedReset(
-          gapCenterX,
-          FLOOR_Y - ((FLOOR_Y - Math.min(FLOOR_Y - 62, stepY + 57))/2),
-          gapWidth - 4,
-          FLOOR_Y - Math.min(FLOOR_Y - 62, stepY + 57),
-        ),
-      );
-    }
   }
 
-  // Any marble that falls beneath the staircase before reaching the finish
-  // resets, while the right quarter of the floor is the only green finish.
+  // The entire left side of the floor is one continuous red pit.
+  // The right quarter is the green finish.
   const greenStartX = WIDTH * 0.75;
   const innerRight = WIDTH - 36;
   const greenWidth = innerRight - greenStartX;
@@ -871,6 +895,7 @@ function buildGlueTrap() {
         lineWidth: 3,
       },
     }),
+    makeRedReset(centerX, playTop - 10, 62, 24),
   );
 
   // A peg row spreads the marbles before they enter the glue field.
@@ -887,7 +912,7 @@ function buildGlueTrap() {
       28 +
       Math.random() * Math.max(1, playBottom - playTop - 56);
     const direction: -1 | 1 = Math.random() < 0.5 ? -1 : 1;
-    const speed = 4.4 + Math.random() * 2.8;
+    const speed = 3.2 + Math.random() * 5.4;
     const delay = index * 115 + Math.random() * 350;
 
     bodies.push(makeGlueLine(y, direction, speed, delay));
@@ -913,7 +938,7 @@ const LEVELS: LevelDefinition[] = [
   {
     id: "rising-resets",
     name: "Rising Resets",
-    description: "Two red reset balls circulate through a broad obstacle bowl.",
+    description: "Two reset balls rise through 1.5-marble chokepoints and a shallow center V.",
     build: buildRisingResets,
   },
   {
@@ -955,7 +980,7 @@ const LEVELS: LevelDefinition[] = [
     id: "staircase",
     name: "Staircase",
     description:
-      "Bounce down marble-wide steps, avoid the red gaps, and reach the green floor on the far right.",
+      "Bounce down marble-wide steps, avoid the red floor pit, and reach the green zone on the far right.",
     build: buildStaircase,
   },
   {
@@ -1320,7 +1345,7 @@ export default function MarbleRace({
                 body.render.visible = false;
                 body.collisionFilter.mask = 0;
                 body.plugin.glueDirection = Math.random() < 0.5 ? -1 : 1;
-                body.plugin.glueSpeed = 4.4 + Math.random() * 2.8;
+                body.plugin.glueSpeed = 3.2 + Math.random() * 5.4;
                 body.plugin.glueNextLaunch =
                   timestamp + 120 + Math.random() * 520;
 
