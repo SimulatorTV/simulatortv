@@ -42,7 +42,8 @@ type LevelId =
   | "diamonds"
   | "minefield"
   | "column-rush"
-  | "staircase";
+  | "staircase"
+  | "glue-trap";
 
 type LevelDefinition = {
   id: LevelId;
@@ -71,6 +72,10 @@ type ObstacleBody = Matter.Body & {
     pulseCycleMs?: number;
     pulseTravelMs?: number;
     pulsePhaseMs?: number;
+    glueLine?: boolean;
+    glueDirection?: -1 | 1;
+    glueSpeed?: number;
+    glueNextLaunch?: number;
   };
 };
 
@@ -272,6 +277,39 @@ function makeColumnPulseReset(
   return body;
 }
 
+function makeGlueLine(
+  y: number,
+  direction: -1 | 1,
+  speed: number,
+  launchDelay: number,
+) {
+  const body = Bodies.rectangle(WIDTH / 2, y, 235, 13, {
+    isStatic: true,
+    friction: 0.9,
+    frictionStatic: 1,
+    restitution: 0.05,
+    collisionFilter: {
+      category: CATEGORY_STAGE,
+      mask: CATEGORY_MARBLE,
+    },
+    render: {
+      fillStyle: "#f472b6",
+      strokeStyle: "#831843",
+      lineWidth: 3,
+    },
+  }) as ObstacleBody;
+
+  body.plugin = {
+    kind: "stage",
+    glueLine: true,
+    glueDirection: direction,
+    glueSpeed: speed,
+    glueNextLaunch: launchDelay,
+  };
+
+  return body;
+}
+
 function makeGreenFinish(x: number, y: number, width: number, height: number) {
   const body = Bodies.rectangle(x, y, width, height, {
     isStatic: true,
@@ -399,8 +437,8 @@ function buildPaddleBowl() {
   // Two shallow outer guides leave the entire middle open, preventing
   // marbles from settling into divots between lower platforms.
   bodies.push(
-    makeWall(190, 645, 260, 18, { angle: 0.12 }),
-    makeWall(910, 645, 260, 18, { angle: -0.12 }),
+    makeWall(130, 645, 380, 18, { angle: 0.12 }),
+    makeWall(970, 645, 380, 18, { angle: -0.12 }),
     makeFullFloorZone("green-finish"),
   );
 
@@ -412,8 +450,8 @@ function buildRisingResets() {
 
   // Two separate side ramps create an open middle lane instead of a blocking X.
   bodies.push(
-    makeWall(235, 390, 360, 26, { angle: 0.28 }),
-    makeWall(865, 390, 360, 26, { angle: -0.28 }),
+    makeWall(165, 390, 500, 26, { angle: 0.28 }),
+    makeWall(935, 390, 500, 26, { angle: -0.28 }),
     makeWall(275, 585, 330, 24, { angle: 0.12 }),
     makeWall(825, 585, 330, 24, { angle: -0.12 }),
     makeWall(550, 510, 190, 22, { angle: 0.08 }),
@@ -771,11 +809,13 @@ function buildStaircase() {
     const stepX = firstStepX + index * pitch;
     const stepY = firstStepY + index * stepDrop;
 
+    if (index < stepCount - 1) {
     bodies.push(
       makeWall(stepX, stepY, stepWidth, 18, {
         render: stairColor,
       }),
     );
+    }
 
     // Every gap has a red reset zone underneath it.
     if (index < stepCount - 1) {
@@ -786,9 +826,9 @@ function buildStaircase() {
       bodies.push(
         makeRedReset(
           gapCenterX,
-          Math.min(FLOOR_Y - 62, stepY + 57),
+          FLOOR_Y - ((FLOOR_Y - Math.min(FLOOR_Y - 62, stepY + 57))/2),
           gapWidth - 4,
-          26,
+          FLOOR_Y - Math.min(FLOOR_Y - 62, stepY + 57),
         ),
       );
     }
@@ -810,6 +850,54 @@ function buildStaircase() {
       greenWidth,
       38,
     ),
+  );
+
+  return bodies;
+}
+
+function buildGlueTrap() {
+  const bodies = makeBaseStage();
+
+  const centerX = WIDTH / 2;
+  const playTop = START_Y + START_HEIGHT + 58;
+  const playBottom = FLOOR_Y - 52;
+
+  // One north-to-south divider separates the left and right halves.
+  bodies.push(
+    makeWall(centerX, (playTop + playBottom) / 2, 22, playBottom - playTop, {
+      render: {
+        fillStyle: "#64748b",
+        strokeStyle: "#1e293b",
+        lineWidth: 3,
+      },
+    }),
+  );
+
+  // A peg row spreads the marbles before they enter the glue field.
+  const pegY = START_Y + START_HEIGHT + 42;
+  for (let x = 78; x <= WIDTH - 78; x += 72) {
+    bodies.push(makePeg(x, pegY, 11));
+  }
+
+  // Fifteen glue bars repeatedly fire from the middle toward a random side.
+  // Their heights, speeds, directions, and launch delays are staggered.
+  for (let index = 0; index < 15; index += 1) {
+    const y =
+      playTop +
+      28 +
+      Math.random() * Math.max(1, playBottom - playTop - 56);
+    const direction: -1 | 1 = Math.random() < 0.5 ? -1 : 1;
+    const speed = 4.4 + Math.random() * 2.8;
+    const delay = index * 115 + Math.random() * 350;
+
+    bodies.push(makeGlueLine(y, direction, speed, delay));
+  }
+
+  // Both side walls reset glued or free marbles. The entire floor qualifies.
+  bodies.push(
+    makeRedReset(43, 500, 30, 540),
+    makeRedReset(WIDTH - 43, 500, 30, 540),
+    makeFullFloorZone("green-finish"),
   );
 
   return bodies;
@@ -870,6 +958,13 @@ const LEVELS: LevelDefinition[] = [
       "Bounce down marble-wide steps, avoid the red gaps, and reach the green floor on the far right.",
     build: buildStaircase,
   },
+  {
+    id: "glue-trap",
+    name: "Glue Trap",
+    description:
+      "Avoid fifteen glue bars that carry trapped marbles toward red side walls.",
+    build: buildGlueTrap,
+  },
 ];
 
 function makeSpawnPositions(count: number) {
@@ -899,6 +994,16 @@ export default function MarbleRace({
   const renderRef = useRef<Render | null>(null);
   const runnerRef = useRef<Runner | null>(null);
   const marblesRef = useRef<Map<number, MarbleMeta>>(new Map());
+  const gluedMarblesRef = useRef<
+    Map<
+      number,
+      {
+        platformId: number;
+        offsetX: number;
+        offsetY: number;
+      }
+    >
+  >(new Map());
   const gateRef = useRef<Matter.Body | null>(null);
   const remainingRef = useRef<MarbleContestant[]>(contestants);
   const eliminatedRef = useRef<MarbleContestant[]>([]);
@@ -970,6 +1075,7 @@ export default function MarbleRace({
     runnerRef.current = null;
     gateRef.current = null;
     marblesRef.current.clear();
+    gluedMarblesRef.current.clear();
   }, [clearTransitionWork]);
 
   const refillLevelQueue = useCallback(() => {
@@ -1182,6 +1288,75 @@ export default function MarbleRace({
               });
             }
           }
+
+          if (
+            body.plugin?.glueLine &&
+            body.plugin.glueDirection !== undefined &&
+            body.plugin.glueSpeed !== undefined
+          ) {
+            const launchTime = body.plugin.glueNextLaunch || 0;
+            const active = roundStartedRef.current && timestamp >= launchTime;
+
+            body.render.visible = active;
+            body.collisionFilter.mask = active ? CATEGORY_MARBLE : 0;
+
+            if (active) {
+              const nextX =
+                body.position.x +
+                body.plugin.glueDirection * body.plugin.glueSpeed;
+              Body.setPosition(body, { x: nextX, y: body.position.y });
+
+              const reachedEdge =
+                (body.plugin.glueDirection < 0 && nextX <= 72) ||
+                (body.plugin.glueDirection > 0 && nextX >= WIDTH - 72);
+
+              if (reachedEdge) {
+                for (const [marbleId, glued] of gluedMarblesRef.current) {
+                  if (glued.platformId === body.id) {
+                    gluedMarblesRef.current.delete(marbleId);
+                  }
+                }
+
+                body.render.visible = false;
+                body.collisionFilter.mask = 0;
+                body.plugin.glueDirection = Math.random() < 0.5 ? -1 : 1;
+                body.plugin.glueSpeed = 4.4 + Math.random() * 2.8;
+                body.plugin.glueNextLaunch =
+                  timestamp + 120 + Math.random() * 520;
+
+                Body.setPosition(body, {
+                  x: WIDTH / 2,
+                  y: 315 + Math.random() * 385,
+                });
+              }
+            }
+          }
+        }
+
+        // Glued marbles inherit the exact position of their moving glue bar.
+        const bodiesById = new Map(
+          Composite.allBodies(engine.world).map((body) => [body.id, body]),
+        );
+
+        for (const [marbleId, glued] of gluedMarblesRef.current) {
+          const meta = marblesRef.current.get(marbleId);
+          const platform = bodiesById.get(glued.platformId);
+
+          if (
+            !meta ||
+            !platform ||
+            qualifiedRef.current.has(meta.contestant.id)
+          ) {
+            gluedMarblesRef.current.delete(marbleId);
+            continue;
+          }
+
+          Body.setPosition(meta.body, {
+            x: platform.position.x + glued.offsetX,
+            y: platform.position.y + glued.offsetY,
+          });
+          Body.setVelocity(meta.body, { x: 0, y: 0 });
+          Body.setAngularVelocity(meta.body, 0);
         }
 
         if (!roundStartedRef.current) {
@@ -1259,10 +1434,12 @@ export default function MarbleRace({
               body.plugin?.kind === "red-reset" ||
               body.plugin?.kind === "green-finish",
           );
+          const glueBody = [bodyA, bodyB].find(
+            (body) => body.plugin?.glueLine,
+          );
 
           if (
             !marbleBody ||
-            !sensorBody ||
             !roundStartedRef.current ||
             roundResolvingRef.current
           ) {
@@ -1272,7 +1449,20 @@ export default function MarbleRace({
           const meta = marblesRef.current.get(marbleBody.id);
           if (!meta || qualifiedRef.current.has(meta.contestant.id)) continue;
 
+          if (glueBody && !gluedMarblesRef.current.has(marbleBody.id)) {
+            gluedMarblesRef.current.set(marbleBody.id, {
+              platformId: glueBody.id,
+              offsetX: marbleBody.position.x - glueBody.position.x,
+              offsetY: marbleBody.position.y - glueBody.position.y,
+            });
+            Body.setVelocity(marbleBody, { x: 0, y: 0 });
+            Body.setAngularVelocity(marbleBody, 0);
+          }
+
+          if (!sensorBody) continue;
+
           if (sensorBody.plugin.kind === "red-reset") {
+            gluedMarblesRef.current.delete(marbleBody.id);
             const activeMetas = [...marblesRef.current.values()].filter(
               (item) => !qualifiedRef.current.has(item.contestant.id),
             );
@@ -1284,6 +1474,7 @@ export default function MarbleRace({
           }
 
           if (sensorBody.plugin.kind === "green-finish") {
+            gluedMarblesRef.current.delete(marbleBody.id);
             qualifiedRef.current.add(meta.contestant.id);
             setQualifiedCount(qualifiedRef.current.size);
             setQualifiedThisRound((current) =>
