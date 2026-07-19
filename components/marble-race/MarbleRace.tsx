@@ -41,7 +41,8 @@ type LevelId =
   | "plinko"
   | "diamonds"
   | "minefield"
-  | "column-rush";
+  | "column-rush"
+  | "staircase";
 
 type LevelDefinition = {
   id: LevelId;
@@ -263,7 +264,7 @@ function makeColumnPulseReset(
     pulseColumn: true,
     pulseTopY: topY,
     pulseBottomY: bottomY,
-    pulseCycleMs: 6000,
+    pulseCycleMs: 2000,
     pulseTravelMs: 1000,
     pulsePhaseMs: phaseMs,
   };
@@ -731,10 +732,85 @@ function buildColumnRush() {
         usableWidth,
         dividerTopY + 20,
         FLOOR_Y - 54,
-        (index * 430) % 6000,
+        (index * 155) % 2000,
       ),
     );
   }
+
+  return bodies;
+}
+
+function buildStaircase() {
+  const bodies = makeBaseStage();
+
+  const stairColor = {
+    fillStyle: "#94a3b8",
+    strokeStyle: "#1e293b",
+    lineWidth: 3,
+  };
+
+  // This long wall begins directly beneath the gate on the right and slopes
+  // down toward the left, naturally feeding the marbles onto the staircase.
+  bodies.push(
+    makeWall(815, 315, 560, 24, {
+      angle: -0.24,
+      render: stairColor,
+    }),
+  );
+
+  const stepWidth = MARBLE_RADIUS * 2;
+  const gapWidth = MARBLE_RADIUS * 3;
+  const pitch = stepWidth + gapWidth;
+  const firstStepX = 76;
+  const firstStepY = 405;
+  const stepDrop = 48;
+  const stepCount = 8;
+
+  // Marble-wide stair tops with gaps that are 1.5 marbles wide.
+  for (let index = 0; index < stepCount; index += 1) {
+    const stepX = firstStepX + index * pitch;
+    const stepY = firstStepY + index * stepDrop;
+
+    bodies.push(
+      makeWall(stepX, stepY, stepWidth, 18, {
+        render: stairColor,
+      }),
+    );
+
+    // Every gap has a red reset zone underneath it.
+    if (index < stepCount - 1) {
+      const nextStepX = firstStepX + (index + 1) * pitch;
+      const gapCenterX =
+        (stepX + stepWidth / 2 + nextStepX - stepWidth / 2) / 2;
+
+      bodies.push(
+        makeRedReset(
+          gapCenterX,
+          Math.min(FLOOR_Y - 62, stepY + 57),
+          gapWidth - 4,
+          26,
+        ),
+      );
+    }
+  }
+
+  // Any marble that falls beneath the staircase before reaching the finish
+  // resets, while the right quarter of the floor is the only green finish.
+  const greenStartX = WIDTH * 0.75;
+  const innerRight = WIDTH - 36;
+  const greenWidth = innerRight - greenStartX;
+  const redLeft = 36;
+  const redWidth = greenStartX - redLeft - 8;
+
+  bodies.push(
+    makeRedReset(redLeft + redWidth / 2, FLOOR_Y - 9, redWidth, 38),
+    makeGreenFinish(
+      greenStartX + greenWidth / 2,
+      FLOOR_Y - 9,
+      greenWidth,
+      38,
+    ),
+  );
 
   return bodies;
 }
@@ -784,8 +860,15 @@ const LEVELS: LevelDefinition[] = [
     id: "column-rush",
     name: "Column Rush",
     description:
-      "Choose a narrow vertical lane and dodge red sweeps that rocket upward every six seconds.",
+      "Choose a narrow vertical lane and dodge red sweeps that rocket upward every two seconds.",
     build: buildColumnRush,
+  },
+  {
+    id: "staircase",
+    name: "Staircase",
+    description:
+      "Bounce down marble-wide steps, avoid the red gaps, and reach the green floor on the far right.",
+    build: buildStaircase,
   },
 ];
 
