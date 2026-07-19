@@ -34,7 +34,7 @@ type MarbleMeta = {
   image: HTMLImageElement | null;
 };
 
-type LevelId = "paddle-bowl" | "rising-resets" | "moving-bridge";
+type LevelId = "paddle-bowl" | "rising-resets" | "moving-bridge" | "plinko";
 
 type LevelDefinition = {
   id: LevelId;
@@ -119,9 +119,9 @@ function makeWall(
 ) {
   const body = Bodies.rectangle(x, y, width, height, {
     isStatic: true,
-    friction: 0.002,
+    friction: 0,
     frictionStatic: 0,
-    restitution: 0.92,
+    restitution: 0.94,
     collisionFilter: {
       category: CATEGORY_STAGE,
       mask: CATEGORY_MARBLE | CATEGORY_STAGE,
@@ -154,6 +154,27 @@ function makeSpinner(
   }) as ObstacleBody;
 
   body.plugin = { kind: "stage", rotateSpeed: speed };
+  return body;
+}
+
+function makePeg(x: number, y: number, radius = 10) {
+  const body = Bodies.circle(x, y, radius, {
+    isStatic: true,
+    friction: 0,
+    frictionStatic: 0,
+    restitution: 1.08,
+    collisionFilter: {
+      category: CATEGORY_STAGE,
+      mask: CATEGORY_MARBLE,
+    },
+    render: {
+      fillStyle: "#8b5cf6",
+      strokeStyle: "#312e81",
+      lineWidth: 2,
+    },
+  }) as ObstacleBody;
+
+  body.plugin = { kind: "stage" };
   return body;
 }
 
@@ -272,30 +293,32 @@ function makeBaseStage() {
 function buildPaddleBowl() {
   const bodies = makeBaseStage();
 
-  // Open upper funnels direct every marble toward the paddles without sealing paths.
+  // Broad upper ramps leave a very wide central opening.
   bodies.push(
-    makeWall(245, 340, 410, 24, { angle: 0.27 }),
-    makeWall(855, 340, 410, 24, { angle: -0.27 }),
+    makeWall(205, 335, 315, 20, { angle: 0.22 }),
+    makeWall(895, 335, 315, 20, { angle: -0.22 }),
   );
 
-  [280, 470, 630, 820].forEach((x, index) => {
-    const spinner = makeSpinner(
-      x,
-      515,
-      165,
-      index < 2 ? 0.07 : -0.07,
-      "#a3a3a3",
-    );
-    Body.setAngle(spinner, index % 2 === 0 ? -0.85 : 0.85);
+  // Smaller paddles with generous spacing so marbles cannot become wedged.
+  const paddleData = [
+    { x: 245, y: 500, angle: -0.7, speed: 0.075 },
+    { x: 440, y: 545, angle: 0.65, speed: -0.075 },
+    { x: 660, y: 545, angle: -0.65, speed: 0.075 },
+    { x: 855, y: 500, angle: 0.7, speed: -0.075 },
+  ];
+
+  paddleData.forEach(({ x, y, angle, speed }) => {
+    const spinner = makeSpinner(x, y, 118, speed, "#a3a3a3");
+    Body.setAngle(spinner, angle);
     bodies.push(spinner);
   });
 
-  // Short guides leave wide gaps and feed the entire green floor.
+  // Short low ramps accelerate marbles toward the full green floor.
   bodies.push(
-    makeWall(205, 635, 250, 20, { angle: 0.13 }),
-    makeWall(440, 650, 205, 20, { angle: -0.11 }),
-    makeWall(660, 650, 205, 20, { angle: 0.11 }),
-    makeWall(895, 635, 250, 20, { angle: -0.13 }),
+    makeWall(165, 645, 210, 18, { angle: 0.16 }),
+    makeWall(390, 670, 180, 18, { angle: -0.14 }),
+    makeWall(710, 670, 180, 18, { angle: 0.14 }),
+    makeWall(935, 645, 210, 18, { angle: -0.16 }),
     makeFullFloorZone("green-finish"),
   );
 
@@ -346,6 +369,66 @@ function buildMovingBridge() {
   return bodies;
 }
 
+function buildPlinko() {
+  const bodies = makeBaseStage();
+
+  // Funnel the pack toward the peg field.
+  bodies.push(
+    makeWall(155, 295, 260, 20, { angle: 0.18 }),
+    makeWall(945, 295, 260, 20, { angle: -0.18 }),
+  );
+
+  const pegStartY = 330;
+  const rowGap = 68;
+  const colGap = 82;
+  const pegRows = 6;
+
+  for (let row = 0; row < pegRows; row += 1) {
+    const offset = row % 2 === 0 ? 0 : colGap / 2;
+    const y = pegStartY + row * rowGap;
+
+    for (let x = 95 + offset; x <= WIDTH - 95; x += colGap) {
+      bodies.push(makePeg(x, y, 10));
+    }
+  }
+
+  // Slots are slightly wider than a 48px marble.
+  const innerLeft = 36;
+  const innerRight = WIDTH - 36;
+  const slotCount = 16;
+  const slotWidth = (innerRight - innerLeft) / slotCount;
+  const dividerTop = 686;
+  const dividerHeight = FLOOR_Y - dividerTop + 18;
+
+  for (let index = 0; index <= slotCount; index += 1) {
+    const x = innerLeft + index * slotWidth;
+
+    bodies.push(
+      makeWall(x, dividerTop + dividerHeight / 2, 8, dividerHeight, {
+        render: {
+          fillStyle: "#64748b",
+          strokeStyle: "#1e293b",
+          lineWidth: 2,
+        },
+      }),
+    );
+  }
+
+  for (let index = 0; index < slotCount; index += 1) {
+    const centerX = innerLeft + slotWidth * index + slotWidth / 2;
+    const zoneWidth = slotWidth - 9;
+    const isGreen = index % 2 === 0;
+
+    bodies.push(
+      isGreen
+        ? makeGreenFinish(centerX, FLOOR_Y - 9, zoneWidth, 38)
+        : makeRedReset(centerX, FLOOR_Y - 9, zoneWidth, 38),
+    );
+  }
+
+  return bodies;
+}
+
 const LEVELS: LevelDefinition[] = [
   {
     id: "paddle-bowl",
@@ -365,6 +448,13 @@ const LEVELS: LevelDefinition[] = [
     description:
       "A moving center bridge splits the course between three exits.",
     build: buildMovingBridge,
+  },
+  {
+    id: "plinko",
+    name: "Plinko",
+    description:
+      "Marbles bounce through a peg board into alternating red and green slots.",
+    build: buildPlinko,
   },
 ];
 
@@ -531,7 +621,7 @@ export default function MarbleRace({
       roundResolvingRef.current = false;
 
       const engine = Engine.create({
-        gravity: { x: 0, y: 1.04, scale: 0.001 },
+        gravity: { x: 0, y: 1.18, scale: 0.001 },
       });
       engine.positionIterations = 10;
       engine.velocityIterations = 8;
@@ -565,9 +655,10 @@ export default function MarbleRace({
       roundContestants.forEach((contestant, index) => {
         const position = positions[index];
         const marble = Bodies.circle(position.x, position.y, MARBLE_RADIUS, {
-          restitution: 0.88,
-          friction: 0.012,
-          frictionAir: 0.004,
+          restitution: 0.9,
+          friction: 0,
+          frictionStatic: 0,
+          frictionAir: 0.0015,
           density: 0.004,
           collisionFilter: {
             category: CATEGORY_MARBLE,
@@ -646,6 +737,17 @@ export default function MarbleRace({
             Body.applyForce(meta.body, meta.body.position, {
               x: (Math.random() - 0.5) * 0.0008,
               y: (Math.random() - 0.5) * 0.00025,
+            });
+          }
+        } else {
+          for (const meta of marblesRef.current.values()) {
+            if (qualifiedRef.current.has(meta.contestant.id)) continue;
+
+            // Small continuous downward force helps marbles accelerate on ramps
+            // without making collisions look unnatural.
+            Body.applyForce(meta.body, meta.body.position, {
+              x: 0,
+              y: 0.00014,
             });
           }
         }
