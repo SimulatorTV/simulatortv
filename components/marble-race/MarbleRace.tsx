@@ -999,18 +999,41 @@ function buildWheel() {
           Math.pow(centerY - rampCenterY, 2),
       ),
     ) - 8;
-  const rampLength = (rampInnerX - rampOuterX) / Math.cos(rampAngle);
-  const rampCenterX = (rampOuterX + rampInnerX) / 2;
+  const originalRampLength =
+    (rampInnerX - rampOuterX) / Math.cos(rampAngle);
+  const originalRampCenterX = (rampOuterX + rampInnerX) / 2;
+
+  // Shorten only the wheel-facing end of each ramp while keeping the
+  // side-wall end in the same place.
+  const rampTrim = 44;
+  const rampLength = originalRampLength - rampTrim;
+  const rampCenterShiftX = Math.cos(rampAngle) * (rampTrim / 2);
+  const rampCenterShiftY = Math.sin(rampAngle) * (rampTrim / 2);
+  const leftRampCenterX = originalRampCenterX - rampCenterShiftX;
+  const rightRampCenterX = WIDTH - originalRampCenterX + rampCenterShiftX;
+  const adjustedRampCenterY = rampCenterY - rampCenterShiftY;
 
   bodies.push(
-    makeWall(rampCenterX, rampCenterY, rampLength, rampThickness, {
-      angle: rampAngle,
-      render: rampColor,
-    }),
-    makeWall(WIDTH - rampCenterX, rampCenterY, rampLength, rampThickness, {
-      angle: -rampAngle,
-      render: rampColor,
-    }),
+    makeWall(
+      leftRampCenterX,
+      adjustedRampCenterY,
+      rampLength,
+      rampThickness,
+      {
+        angle: rampAngle,
+        render: rampColor,
+      },
+    ),
+    makeWall(
+      rightRampCenterX,
+      adjustedRampCenterY,
+      rampLength,
+      rampThickness,
+      {
+        angle: -rampAngle,
+        render: rampColor,
+      },
+    ),
   );
 
   // Large stationary center circle.
@@ -1055,7 +1078,7 @@ function buildWheel() {
   const spinnerSafeBottomY = centerY - protectedRadius - 14;
   const spinnerData = [
     { x: 345, y: spinnerSafeBottomY - 50, length: 88, speed: 0.11 },
-    { x: 550, y: spinnerSafeBottomY - 62, length: 96, speed: -0.12 },
+    { x: 550, y: spinnerSafeBottomY - 62, length: 96, speed: 0.12 },
     { x: 755, y: spinnerSafeBottomY - 50, length: 88, speed: 0.11 },
   ];
 
