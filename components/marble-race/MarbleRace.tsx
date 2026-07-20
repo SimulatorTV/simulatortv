@@ -44,7 +44,8 @@ type LevelId =
   | "column-rush"
   | "staircase"
   | "glue-trap"
-  | "wheel";
+  | "wheel"
+  | "u-boat";
 
 type LevelDefinition = {
   id: LevelId;
@@ -85,6 +86,10 @@ type ObstacleBody = Matter.Body & {
     wheelOffsetY?: number;
     wheelBaseAngle?: number;
     wheelAngularSpeed?: number;
+    uBoat?: boolean;
+    uBoatDirection?: -1 | 1;
+    uBoatSpeed?: number;
+    uBoatWrapPadding?: number;
   };
 };
 
@@ -374,6 +379,92 @@ function makeWheelSpoke(
   };
 
   Body.setAngle(body, baseAngle);
+  return body;
+}
+
+
+function makeUBoat(
+  x: number,
+  y: number,
+  direction: -1 | 1,
+  speed: number,
+  color: string,
+) {
+  const bottomWidth = 132;
+  const bottomHeight = 18;
+  const sideLength = 76;
+  const sideThickness = 16;
+  const sideAngle = 0.58;
+
+  const common = {
+    isStatic: true,
+    friction: 0,
+    frictionStatic: 0,
+    restitution: 0.98,
+    collisionFilter: {
+      category: CATEGORY_STAGE,
+      mask: CATEGORY_MARBLE,
+    },
+    render: {
+      fillStyle: color,
+      strokeStyle: "#1e293b",
+      lineWidth: 3,
+    },
+  };
+
+  const bottom = Bodies.rectangle(
+    x,
+    y + 28,
+    bottomWidth,
+    bottomHeight,
+    common,
+  );
+
+  const sideOffsetX = bottomWidth / 2 - 8;
+  const sideOffsetY = 2;
+
+  const leftSide = Bodies.rectangle(
+    x - sideOffsetX,
+    y + sideOffsetY,
+    sideLength,
+    sideThickness,
+    {
+      ...common,
+      angle: -sideAngle,
+    },
+  );
+
+  const rightSide = Bodies.rectangle(
+    x + sideOffsetX,
+    y + sideOffsetY,
+    sideLength,
+    sideThickness,
+    {
+      ...common,
+      angle: sideAngle,
+    },
+  );
+
+  const body = Body.create({
+    parts: [bottom, leftSide, rightSide],
+    isStatic: true,
+    friction: 0,
+    frictionStatic: 0,
+    restitution: 0.98,
+    collisionFilter: {
+      category: CATEGORY_STAGE,
+      mask: CATEGORY_MARBLE,
+    },
+  }) as ObstacleBody;
+
+  body.plugin = {
+    kind: "stage",
+    uBoat: true,
+    uBoatDirection: direction,
+    uBoatSpeed: speed,
+    uBoatWrapPadding: 90,
+  };
+
   return body;
 }
 
@@ -960,6 +1051,53 @@ function buildGlueTrap() {
 
 
 
+
+function buildUBoat() {
+  const bodies = makeBaseStage();
+
+  const playTop = START_Y + START_HEIGHT + 46;
+  const playBottom = FLOOR_Y - 58;
+  const rowYs = [305, 425, 545, 665];
+  const rowDirections: Array<-1 | 1> = [-1, 1, -1, 1];
+  const rowColors = ["#38bdf8", "#a78bfa", "#f59e0b", "#34d399"];
+  const boatsPerRow = 6;
+  const spacing = 230;
+
+  // Both side walls reset marbles. These sensors extend through the full
+  // moving-platform field, so a U can carry a marble directly into a reset.
+  bodies.push(
+    makeRedReset(43, (playTop + playBottom) / 2, 34, playBottom - playTop + 80),
+    makeRedReset(
+      WIDTH - 43,
+      (playTop + playBottom) / 2,
+      34,
+      playBottom - playTop + 80,
+    ),
+  );
+
+  rowYs.forEach((y, rowIndex) => {
+    const direction = rowDirections[rowIndex];
+    const speed = 1.9 + rowIndex * 0.12;
+    const rowOffset = rowIndex % 2 === 0 ? 0 : spacing / 2;
+
+    for (let index = 0; index < boatsPerRow; index += 1) {
+      const x = -100 + rowOffset + index * spacing;
+      bodies.push(
+        makeUBoat(
+          x,
+          y,
+          direction,
+          speed,
+          rowColors[rowIndex],
+        ),
+      );
+    }
+  });
+
+  bodies.push(makeFullFloorZone("green-finish"));
+  return bodies;
+}
+
 function buildWheel() {
   const bodies = makeBaseStage();
 
@@ -1035,6 +1173,45 @@ function buildWheel() {
       },
     ),
   );
+
+  // Two vertical sweepers begin directly beneath the wheel-facing ends of the
+  // blue ramps. They rotate outward toward the nearest side wall so marbles
+  // cannot remain stacked in the pockets beside the wheel.
+  const leftRampInnerEnd = {
+    x: leftRampCenterX + Math.cos(rampAngle) * (rampLength / 2),
+    y: adjustedRampCenterY + Math.sin(rampAngle) * (rampLength / 2),
+  };
+  const rightRampInnerEnd = {
+    x: rightRampCenterX - Math.cos(rampAngle) * (rampLength / 2),
+    y: adjustedRampCenterY + Math.sin(rampAngle) * (rampLength / 2),
+  };
+
+  const sideSweeperLength = 138;
+  const sideSweeperTopGap = 4;
+  const sideSweeperCenterY =
+    leftRampInnerEnd.y + sideSweeperTopGap + sideSweeperLength / 2;
+
+  const leftSideSweeper = makeSpinner(
+    leftRampInnerEnd.x,
+    sideSweeperCenterY,
+    sideSweeperLength,
+    0.18,
+    "#22c55e",
+  );
+  leftSideSweeper.render.strokeStyle = "#14532d";
+  Body.setAngle(leftSideSweeper, Math.PI / 2);
+
+  const rightSideSweeper = makeSpinner(
+    rightRampInnerEnd.x,
+    sideSweeperCenterY,
+    sideSweeperLength,
+    -0.18,
+    "#22c55e",
+  );
+  rightSideSweeper.render.strokeStyle = "#14532d";
+  Body.setAngle(rightSideSweeper, Math.PI / 2);
+
+  bodies.push(leftSideSweeper, rightSideSweeper);
 
   // Large stationary center circle.
   const hub = Bodies.circle(centerX, centerY, hubRadius, {
@@ -1159,6 +1336,13 @@ const LEVELS: LevelDefinition[] = [
     description:
       "Avoid fifteen glue bars that carry trapped marbles toward red side walls.",
     build: buildGlueTrap,
+  },
+  {
+    id: "u-boat",
+    name: "U Boat",
+    description:
+      "Four alternating conveyor rows of moving U platforms can ramp marbles forward or carry them into red reset walls.",
+    build: buildUBoat,
   },
   {
     id: "wheel",
@@ -1475,6 +1659,40 @@ export default function MarbleRace({
                   ? body.plugin.moveOriginY + offset
                   : body.plugin.moveOriginY,
             });
+          }
+
+          if (
+            body.plugin?.uBoat &&
+            body.plugin.uBoatDirection !== undefined &&
+            body.plugin.uBoatSpeed !== undefined
+          ) {
+            const direction = body.plugin.uBoatDirection;
+            const speed = body.plugin.uBoatSpeed;
+            const padding = body.plugin.uBoatWrapPadding || 90;
+
+            Body.setPosition(body, {
+              x: body.position.x + direction * speed,
+              y: body.position.y,
+            });
+
+            // Recycle only after the complete U has entered the red wall and
+            // moved entirely offscreen. This prevents a carried marble from
+            // being dropped early at the edge.
+            const fullyOffLeft = direction < 0 && body.bounds.max.x < -padding;
+            const fullyOffRight =
+              direction > 0 && body.bounds.min.x > WIDTH + padding;
+
+            if (fullyOffLeft || fullyOffRight) {
+              const nextX =
+                direction < 0
+                  ? WIDTH + padding + 140
+                  : -padding - 140;
+
+              Body.setPosition(body, {
+                x: nextX,
+                y: body.position.y,
+              });
+            }
           }
 
           if (
