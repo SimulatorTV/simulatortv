@@ -1053,7 +1053,7 @@ function buildUBoat() {
   const rowYs = [305, 425, 545, 665];
   const rowDirections: Array<-1 | 1> = [-1, 1, -1, 1];
   const rowColors = ["#38bdf8", "#a78bfa", "#f59e0b", "#34d399"];
-  const boatsPerRow = 6;
+  const boatsPerRow = 7;
   const spacing = 230;
 
   // Both side walls reset marbles. These sensors extend through the full
