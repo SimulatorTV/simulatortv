@@ -176,7 +176,7 @@ function makeSpinner(
   speed: number,
   color = "#fbbf24",
 ) {
-  const body = Bodies.rectangle(x, y, length, 18, {
+  const body = Bodies.rectangle(x, y, length, 24, {
     isStatic: true,
     friction: 0,
     restitution: 1.06,
@@ -518,8 +518,8 @@ function buildRisingResets() {
   // Keep the established Rising Resets layout. Only the center platform is
   // split into a very shallow upside-down V.
   bodies.push(
-    makeWall(165, 390, 500, 26, { angle: 0.28 }),
-    makeWall(935, 390, 500, 26, { angle: -0.28 }),
+    makeWall(165, 365, 500, 26, { angle: 0.28 }),
+    makeWall(935, 365, 500, 26, { angle: -0.28 }),
     makeWall(275, 585, 330, 24, { angle: 0.12 }),
     makeWall(825, 585, 330, 24, { angle: -0.12 }),
 
@@ -966,7 +966,7 @@ function buildWheel() {
   const centerX = WIDTH / 2;
   const centerY = 535;
   const hubRadius = 205;
-  const spokeLength = 30;
+  const spokeLength = 48;
   const spokeThickness = 5;
   const spokeCount = 28;
   const spokeRadius = hubRadius + spokeLength / 2;
@@ -1077,9 +1077,9 @@ function buildWheel() {
   // Every spinner remains entirely above the protected wheel orbit.
   const spinnerSafeBottomY = centerY - protectedRadius - 14;
   const spinnerData = [
-    { x: 345, y: spinnerSafeBottomY - 50, length: 88, speed: 0.11 },
-    { x: 550, y: spinnerSafeBottomY - 62, length: 96, speed: 0.12 },
-    { x: 755, y: spinnerSafeBottomY - 50, length: 88, speed: 0.11 },
+    { x: 345, y: spinnerSafeBottomY - 50, length: 120, speed: 0.24 },
+    { x: 550, y: spinnerSafeBottomY - 62, length: 132, speed: 0.26 },
+    { x: 755, y: spinnerSafeBottomY - 50, length: 120, speed: 0.24 },
   ];
 
   spinnerData.forEach(({ x, y, length, speed }) => {
