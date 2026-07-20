@@ -390,12 +390,6 @@ function makeUBoat(
   speed: number,
   color: string,
 ) {
-  const bottomWidth = 132;
-  const bottomHeight = 18;
-  const sideLength = 76;
-  const sideThickness = 16;
-  const sideAngle = 0.58;
-
   const common = {
     isStatic: true,
     friction: 0,
@@ -412,41 +406,36 @@ function makeUBoat(
     },
   };
 
-  const bottom = Bodies.rectangle(
-    x,
-    y + 28,
-    bottomWidth,
-    bottomHeight,
-    common,
-  );
+  // Curved bowl built from many small segments to resemble a crescent/U.
+  const parts: Matter.Body[] = [];
+  const radius = 72;
+  const thickness = 16;
+  const arc = Math.PI * 0.78;
+  const segments = 12;
 
-  const sideOffsetX = bottomWidth / 2 - 8;
-  const sideOffsetY = 2;
+  for (let i = 0; i < segments; i++) {
+    const t = i / (segments - 1);
+    const a = Math.PI + arc/2 - t * arc;
 
-  const leftSide = Bodies.rectangle(
-    x - sideOffsetX,
-    y + sideOffsetY,
-    sideLength,
-    sideThickness,
-    {
-      ...common,
-      angle: -sideAngle,
-    },
-  );
+    const px = x + Math.cos(a) * radius;
+    const py = y + Math.sin(a) * radius + 12;
 
-  const rightSide = Bodies.rectangle(
-    x + sideOffsetX,
-    y + sideOffsetY,
-    sideLength,
-    sideThickness,
-    {
-      ...common,
-      angle: sideAngle,
-    },
-  );
+    parts.push(
+      Bodies.rectangle(
+        px,
+        py,
+        thickness,
+        22,
+        {
+          ...common,
+          angle: a + Math.PI/2,
+        }
+      )
+    );
+  }
 
   const body = Body.create({
-    parts: [bottom, leftSide, rightSide],
+    parts,
     isStatic: true,
     friction: 0,
     frictionStatic: 0,
