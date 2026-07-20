@@ -454,6 +454,10 @@ function makeUBoat(
     uBoatWrapPadding: 90,
   };
 
+  // Rotate the sideways crescent 90 degrees counterclockwise so the opening
+  // faces upward and each platform behaves like a true U-shaped boat.
+  Body.setAngle(body, -Math.PI / 2);
+
   return body;
 }
 
