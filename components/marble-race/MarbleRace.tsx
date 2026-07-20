@@ -1198,7 +1198,7 @@ function buildGoalie() {
       angle: 1.18,
       render: wallColor,
     }),
-    makeWall(505, 680, 150, 20, {
+    makeWall(505, 694, 150, 20, {
       angle: -1.18,
       render: wallColor,
     }),
