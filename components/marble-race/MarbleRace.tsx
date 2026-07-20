@@ -381,7 +381,7 @@ function addBingoCup(
   directionAngle: number,
   angularSpeed: number,
 ) {
-  const cupRadius = 118;
+  const cupRadius = 140;
   const insideHalfWidth = 31;
   const sideLength = 52;
 
@@ -1013,76 +1013,55 @@ function buildGlueTrap() {
 }
 
 
+
 function buildBingo() {
   const bodies = makeBaseStage();
 
   const centerX = WIDTH / 2;
-  const centerY = 500;
+  const centerY = 510;
+  const hubRadius = 140;
   const fullRotationMs = 8000;
   const angularSpeed = (Math.PI * 2) / fullRotationMs;
 
+  // Funnel walls now touch the hub.
+  const wallLen = 470;
   bodies.push(
-    makeWall(245, 330, 455, 24, {
-      angle: 0.24,
-      render: {
-        fillStyle: "#94a3b8",
-        strokeStyle: "#1e293b",
-        lineWidth: 3,
-      },
-    }),
-    makeWall(855, 330, 455, 24, {
-      angle: -0.24,
-      render: {
-        fillStyle: "#94a3b8",
-        strokeStyle: "#1e293b",
-        lineWidth: 3,
-      },
-    }),
+    makeWall(centerX - 215, 315, wallLen, 24, { angle: 0.46 }),
+    makeWall(centerX + 215, 315, wallLen, 24, { angle: -0.46 }),
   );
 
-  const hub = Bodies.circle(centerX, centerY, 76, {
-    isStatic: true,
-    friction: 0,
-    frictionStatic: 0,
-    restitution: 0.96,
-    collisionFilter: {
-      category: CATEGORY_STAGE,
-      mask: CATEGORY_MARBLE,
-    },
-    render: {
-      fillStyle: "#f59e0b",
-      strokeStyle: "#78350f",
-      lineWidth: 5,
-    },
+  const hub = Bodies.circle(centerX, centerY, hubRadius, {
+    isStatic:true,
+    friction:0,
+    restitution:0.96,
+    collisionFilter:{category:CATEGORY_STAGE,mask:CATEGORY_MARBLE},
+    render:{fillStyle:"#f59e0b",strokeStyle:"#78350f",lineWidth:5},
   }) as ObstacleBody;
-  hub.plugin = { kind: "stage" };
+  hub.plugin={kind:"stage"};
   bodies.push(hub);
 
-  const legLength = 285;
-  const legOffset = 76 + legLength / 2;
-
-  [0, Math.PI].forEach((angle) => {
+  // Legs start directly on the edge of the circle.
+  const legLength=290;
+  const legOffset=hubRadius + legLength/2;
+  [0,Math.PI].forEach(a=>{
     bodies.push(
       makeBingoRotorPiece(
-        centerX,
-        centerY,
-        Math.cos(angle) * legOffset,
-        Math.sin(angle) * legOffset,
-        legLength,
-        22,
-        angle,
-        angularSpeed,
-        "#a855f7",
-      ),
+        centerX,centerY,
+        Math.cos(a)*legOffset,
+        Math.sin(a)*legOffset,
+        legLength,24,a,angularSpeed,"#a855f7"
+      )
     );
   });
 
-  addBingoCup(bodies, centerX, centerY, Math.PI / 2, angularSpeed);
-  addBingoCup(bodies, centerX, centerY, Math.PI * 1.5, angularSpeed);
+  // Divots are carved into the rim instead of floating outside.
+  addBingoCup(bodies,centerX,centerY,Math.PI/2,angularSpeed);
+  addBingoCup(bodies,centerX,centerY,Math.PI*1.5,angularSpeed);
 
   bodies.push(makeFullFloorZone("green-finish"));
   return bodies;
 }
+
 
 
 const LEVELS: LevelDefinition[] = [
