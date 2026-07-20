@@ -45,7 +45,8 @@ type LevelId =
   | "staircase"
   | "glue-trap"
   | "wheel"
-  | "u-boat";
+  | "u-boat"
+  | "goalie";
 
 type LevelDefinition = {
   id: LevelId;
@@ -90,6 +91,7 @@ type ObstacleBody = Matter.Body & {
     uBoatDirection?: -1 | 1;
     uBoatSpeed?: number;
     uBoatWrapPadding?: number;
+    uBoatWrapDistance?: number;
   };
 };
 
@@ -389,6 +391,7 @@ function makeUBoat(
   direction: -1 | 1,
   speed: number,
   color: string,
+  wrapDistance: number,
 ) {
   const common = {
     isStatic: true,
@@ -452,6 +455,7 @@ function makeUBoat(
     uBoatDirection: direction,
     uBoatSpeed: speed,
     uBoatWrapPadding: 90,
+    uBoatWrapDistance: wrapDistance,
   };
 
   // Rotate the sideways crescent 90 degrees counterclockwise so the opening
@@ -1054,7 +1058,8 @@ function buildUBoat() {
   const rowDirections: Array<-1 | 1> = [-1, 1, -1, 1];
   const rowColors = ["#38bdf8", "#a78bfa", "#f59e0b", "#34d399"];
   const boatsPerRow = 7;
-  const spacing = 230;
+  const spacing = 220;
+  const wrapDistance = boatsPerRow * spacing;
 
   // Both side walls reset marbles. These sensors extend through the full
   // moving-platform field, so a U can carry a marble directly into a reset.
@@ -1072,9 +1077,10 @@ function buildUBoat() {
     const direction = rowDirections[rowIndex];
     const speed = 1.9 + rowIndex * 0.12;
     const rowOffset = rowIndex % 2 === 0 ? 0 : spacing / 2;
+    const firstX = -spacing + rowOffset;
 
     for (let index = 0; index < boatsPerRow; index += 1) {
-      const x = -100 + rowOffset + index * spacing;
+      const x = firstX + index * spacing;
       bodies.push(
         makeUBoat(
           x,
@@ -1082,12 +1088,121 @@ function buildUBoat() {
           direction,
           speed,
           rowColors[rowIndex],
+          wrapDistance,
         ),
       );
     }
   });
 
   bodies.push(makeFullFloorZone("green-finish"));
+  return bodies;
+}
+
+
+function buildGoalie() {
+  const bodies = makeBaseStage();
+
+  const wallColor = {
+    fillStyle: "#94a3b8",
+    strokeStyle: "#1e293b",
+    lineWidth: 3,
+  };
+  const blueColor = {
+    fillStyle: "#3b82f6",
+    strokeStyle: "#1e3a8a",
+    lineWidth: 4,
+  };
+
+  // Upper funnel slopes almost the entire spawn toward a narrow chute on the
+  // far left. The short left guide keeps marbles from escaping the funnel.
+  bodies.push(
+    makeWall(565, 270, 930, 24, {
+      angle: -0.045,
+      render: blueColor,
+    }),
+    makeWall(92, 330, 155, 22, {
+      angle: -1.12,
+      render: wallColor,
+    }),
+    makeWall(66, 460, 22, 250, {
+      render: wallColor,
+    }),
+  );
+
+  // A broad curved-looking launch bowl made from short angled pieces.
+  const bowlPieces = [
+    { x: 72, y: 650, length: 125, angle: 1.18 },
+    { x: 118, y: 704, length: 125, angle: 0.56 },
+    { x: 190, y: 724, length: 135, angle: 0.12 },
+    { x: 270, y: 696, length: 125, angle: -0.48 },
+    { x: 326, y: 638, length: 112, angle: -1.05 },
+  ];
+
+  bowlPieces.forEach(({ x, y, length, angle }) => {
+    bodies.push(
+      makeWall(x, y, length, 20, {
+        angle,
+        render: wallColor,
+      }),
+    );
+  });
+
+  // Fast vertical kicker that launches marbles toward the right-hand goal.
+  const launcher = makeSpinner(185, 625, 165, -0.24, "#f472b6");
+  launcher.render.strokeStyle = "#831843";
+  Body.setAngle(launcher, Math.PI / 2);
+  bodies.push(launcher);
+
+  // Missing the launcher sends a marble into this reset pit.
+  bodies.push(makeRedReset(405, 722, 150, 92));
+
+  // A small jump separates the launch bowl from the long goal approach.
+  bodies.push(
+    makeWall(650, 590, 555, 24, {
+      angle: 0.035,
+      render: wallColor,
+    }),
+  );
+
+  // Goal frame. The green sensor is inside the back of the goal.
+  const goalTopY = 430;
+  const goalBottomY = 640;
+  const goalLeftX = 930;
+  const goalBackX = WIDTH - 48;
+
+  bodies.push(
+    makeWall((goalLeftX + goalBackX) / 2, goalTopY, goalBackX - goalLeftX, 20, {
+      render: wallColor,
+    }),
+    makeWall((goalLeftX + goalBackX) / 2, goalBottomY, goalBackX - goalLeftX, 20, {
+      render: wallColor,
+    }),
+    makeGreenFinish(goalBackX - 4, (goalTopY + goalBottomY) / 2, 24, goalBottomY - goalTopY - 20),
+  );
+
+  // The goalie sweeps vertically through the mouth of the goal.
+  const goalie = makeWall(goalLeftX + 18, 535, 24, 92, {
+    render: {
+      fillStyle: "#facc15",
+      strokeStyle: "#854d0e",
+      lineWidth: 3,
+    },
+    restitution: 1.08,
+  });
+  goalie.plugin = {
+    kind: "stage",
+    moveAxis: "y",
+    moveOriginX: goalLeftX + 18,
+    moveOriginY: 535,
+    moveAmplitude: 82,
+    moveSpeed: 0.0038,
+    movePhase: 0,
+  };
+  bodies.push(goalie);
+
+  // Any marble that falls below the playable approach resets.
+  bodies.push(makeRedReset(690, FLOOR_Y - 18, 650, 34));
+
   return bodies;
 }
 
@@ -1336,6 +1451,13 @@ const LEVELS: LevelDefinition[] = [
     description:
       "Four alternating conveyor rows of moving U platforms can ramp marbles forward or carry them into red reset walls.",
     build: buildUBoat,
+  },
+  {
+    id: "goalie",
+    name: "Goalie",
+    description:
+      "A left-side funnel feeds a powerful launcher toward a goal guarded by a vertically moving goalie.",
+    build: buildGoalie,
   },
   {
     id: "wheel",
@@ -1676,13 +1798,13 @@ export default function MarbleRace({
               direction > 0 && body.bounds.min.x > WIDTH + padding;
 
             if (fullyOffLeft || fullyOffRight) {
-              const nextX =
-                direction < 0
-                  ? WIDTH + padding + 140
-                  : -padding - 140;
+              const wrapDistance =
+                body.plugin.uBoatWrapDistance || WIDTH + padding * 2;
 
               Body.setPosition(body, {
-                x: nextX,
+                x:
+                  body.position.x -
+                  direction * wrapDistance,
                 y: body.position.y,
               });
             }
