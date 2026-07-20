@@ -979,14 +979,37 @@ function buildWheel() {
     lineWidth: 4,
   };
 
-  // Fixed blue walls feed marbles onto the upper sides of the wheel.
+  // Reserve a completely unobstructed 360-degree orbit around the spokes.
+  const spokeOuterRadius = hubRadius + spokeLength;
+  const protectedRadius = spokeOuterRadius + 20;
+
+  // The ramps overlap the side walls slightly so no marble-sized pocket exists.
+  // Their inner ends stop outside the protected spoke orbit.
+  const rampAngle = 0.55;
+  const rampThickness = 20;
+  const sideWallInnerX = 36;
+  const rampOuterX = sideWallInnerX - 8;
+  const rampCenterY = 350;
+  const rampInnerX =
+    centerX -
+    Math.sqrt(
+      Math.max(
+        0,
+        protectedRadius * protectedRadius -
+          Math.pow(centerY - rampCenterY, 2),
+      ),
+    ) -
+    10;
+  const rampLength = (rampInnerX - rampOuterX) / Math.cos(rampAngle);
+  const rampCenterX = (rampOuterX + rampInnerX) / 2;
+
   bodies.push(
-    makeWall(210, 335, 350, 20, {
-      angle: 0.55,
+    makeWall(rampCenterX, rampCenterY, rampLength, rampThickness, {
+      angle: rampAngle,
       render: rampColor,
     }),
-    makeWall(WIDTH - 210, 335, 350, 20, {
-      angle: -0.55,
+    makeWall(WIDTH - rampCenterX, rampCenterY, rampLength, rampThickness, {
+      angle: -rampAngle,
       render: rampColor,
     }),
   );
@@ -1010,8 +1033,7 @@ function buildWheel() {
   hub.plugin = { kind: "stage" };
   bodies.push(hub);
 
-  // Short spokes rotate slowly around the circle. Their gaps create nooks
-  // that can hold one marble until the wheel carries it around.
+  // Short spokes rotate with a fully clear path around the circle.
   for (let index = 0; index < spokeCount; index += 1) {
     const angle = (index / spokeCount) * Math.PI * 2;
 
@@ -1030,11 +1052,12 @@ function buildWheel() {
     );
   }
 
-  // Pink plus spinners knock clustered marbles apart above the wheel.
+  // Every spinner remains entirely above the protected wheel orbit.
+  const spinnerSafeBottomY = centerY - protectedRadius - 14;
   const spinnerData = [
-    { x: 365, y: 315, length: 96, speed: 0.11 },
-    { x: 550, y: 275, length: 104, speed: -0.12 },
-    { x: 735, y: 315, length: 96, speed: 0.11 },
+    { x: 345, y: spinnerSafeBottomY - 50, length: 88, speed: 0.11 },
+    { x: 550, y: spinnerSafeBottomY - 62, length: 96, speed: -0.12 },
+    { x: 755, y: spinnerSafeBottomY - 50, length: 88, speed: 0.11 },
   ];
 
   spinnerData.forEach(({ x, y, length, speed }) => {
