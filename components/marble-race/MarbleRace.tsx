@@ -1058,7 +1058,7 @@ function buildUBoat() {
   const rowDirections: Array<-1 | 1> = [-1, 1, -1, 1];
   const rowColors = ["#38bdf8", "#a78bfa", "#f59e0b", "#34d399"];
   const boatsPerRow = 7;
-  const spacing = 220;
+  const spacing = 245;
   const wrapDistance = boatsPerRow * spacing;
 
   // Both side walls reset marbles. These sensors extend through the full
@@ -1120,35 +1120,63 @@ function buildGoalie() {
       angle: -0.045,
       render: blueColor,
     }),
-    makeWall(92, 330, 155, 22, {
-      angle: -1.12,
+    makeWall(115, 360, 230, 22, {
+      angle: -0.98,
       render: wallColor,
     }),
-    makeWall(66, 460, 22, 250, {
+    makeWall(92, 500, 22, 360, {
       render: wallColor,
     }),
   );
 
-  // A broad curved-looking launch bowl made from short angled pieces.
-  const bowlPieces = [
-    { x: 72, y: 650, length: 125, angle: 1.18 },
-    { x: 118, y: 704, length: 125, angle: 0.56 },
-    { x: 190, y: 724, length: 135, angle: 0.12 },
-    { x: 270, y: 696, length: 125, angle: -0.48 },
-    { x: 326, y: 638, length: 112, angle: -1.05 },
-  ];
+  // Smooth quarter-pipe launch bowl made from many short tangent segments.
+  // The curve runs from the left chute into an upward launch on the right.
+  const quarterPipeCenterX = 110;
+  const quarterPipeCenterY = 625;
+  const quarterPipeRadius = 175;
+  const quarterPipeStartAngle = Math.PI;
+  const quarterPipeEndAngle = Math.PI / 2;
+  const quarterPipeSegments = 18;
+  const quarterPipeThickness = 20;
 
-  bowlPieces.forEach(({ x, y, length, angle }) => {
+  for (let index = 0; index < quarterPipeSegments; index += 1) {
+    const t0 = index / quarterPipeSegments;
+    const t1 = (index + 1) / quarterPipeSegments;
+    const angle0 =
+      quarterPipeStartAngle +
+      (quarterPipeEndAngle - quarterPipeStartAngle) * t0;
+    const angle1 =
+      quarterPipeStartAngle +
+      (quarterPipeEndAngle - quarterPipeStartAngle) * t1;
+
+    const x0 = quarterPipeCenterX + Math.cos(angle0) * quarterPipeRadius;
+    const y0 = quarterPipeCenterY - Math.sin(angle0) * quarterPipeRadius;
+    const x1 = quarterPipeCenterX + Math.cos(angle1) * quarterPipeRadius;
+    const y1 = quarterPipeCenterY - Math.sin(angle1) * quarterPipeRadius;
+
+    const segmentX = (x0 + x1) / 2;
+    const segmentY = (y0 + y1) / 2;
+    const segmentLength = Math.hypot(x1 - x0, y1 - y0) + 3;
+    const segmentAngle = Math.atan2(y1 - y0, x1 - x0);
+
     bodies.push(
-      makeWall(x, y, length, 20, {
-        angle,
+      makeWall(segmentX, segmentY, segmentLength, quarterPipeThickness, {
+        angle: segmentAngle,
         render: wallColor,
       }),
     );
-  });
+  }
+
+  // Short exit lip keeps the final part of the curve aimed at the launcher.
+  bodies.push(
+    makeWall(292, 510, 105, 20, {
+      angle: -1.02,
+      render: wallColor,
+    }),
+  );
 
   // Fast vertical kicker that launches marbles toward the right-hand goal.
-  const launcher = makeSpinner(185, 625, 165, -0.24, "#f472b6");
+  const launcher = makeSpinner(205, 610, 165, -0.24, "#f472b6");
   launcher.render.strokeStyle = "#831843";
   Body.setAngle(launcher, Math.PI / 2);
   bodies.push(launcher);
@@ -1158,11 +1186,13 @@ function buildGoalie() {
 
   // A small jump separates the launch bowl from the long goal approach.
   bodies.push(
-    makeWall(650, 590, 555, 24, {
+    makeWall(705, 590, 430, 24, {
       angle: 0.035,
       render: wallColor,
     }),
   );
+
+  bodies.push(makeRedReset(WIDTH-42, 260, 34, 150));
 
   // Goal frame. The green sensor is inside the back of the goal.
   const goalTopY = 430;
