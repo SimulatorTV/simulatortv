@@ -1184,7 +1184,7 @@ function buildGoalie() {
       render: wallColor,
     }),
     makeRedReset(444, 760, 205, 70),
-    makeRedReset(745, FLOOR_Y - 18, 580, 34),
+    makeFullFloorZone("red-reset"),
     makeRedReset(WIDTH - 42, 300, 34, 180),
   );
 
@@ -1225,7 +1225,7 @@ function buildGoalie() {
     moveOriginX: goalLeftX + 18,
     moveOriginY: 535,
     moveAmplitude: 82,
-    moveSpeed: 0.0038,
+    moveSpeed: 0.0028,
     movePhase: 0,
   };
 
@@ -1548,6 +1548,13 @@ export default function MarbleRace({
   const [enabledLevelIds, setEnabledLevelIds] = useState<Set<LevelId>>(
     () => new Set(LEVELS.map((level) => level.id)),
   );
+
+  const selectAllLevels = () =>
+    setEnabledLevelIds(new Set(LEVELS.map((level) => level.id)));
+
+  const selectNoLevels = () =>
+    setEnabledLevelIds(new Set());
+
   const enabledLevelIdsRef = useRef(enabledLevelIds);
   const [remaining, setRemaining] = useState(contestants);
   const [eliminated, setEliminated] = useState<MarbleContestant[]>([]);
