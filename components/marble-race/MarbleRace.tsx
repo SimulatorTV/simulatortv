@@ -982,6 +982,7 @@ function buildWheel() {
   // Reserve a completely unobstructed 360-degree orbit around the spokes.
   const spokeOuterRadius = hubRadius + spokeLength;
   const protectedRadius = spokeOuterRadius + 20;
+  const rampClearance = 26;
 
   // The ramps overlap the side walls slightly so no marble-sized pocket exists.
   // Their inner ends stop outside the protected spoke orbit.
@@ -995,11 +996,10 @@ function buildWheel() {
     Math.sqrt(
       Math.max(
         0,
-        protectedRadius * protectedRadius -
+        Math.pow(protectedRadius - rampClearance, 2) -
           Math.pow(centerY - rampCenterY, 2),
       ),
-    ) -
-    10;
+    );
   const rampLength = (rampInnerX - rampOuterX) / Math.cos(rampAngle);
   const rampCenterX = (rampOuterX + rampInnerX) / 2;
 
