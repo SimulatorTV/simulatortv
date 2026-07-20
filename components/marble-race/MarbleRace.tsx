@@ -1113,29 +1113,26 @@ function buildGoalie() {
     lineWidth: 4,
   };
 
-  // Long upper funnel that steadily feeds every marble into the open chute.
+  // Wide upper funnel. The blue ramp feeds directly into the open left chute
+  // without any diagonal corner poking through the marble path.
   bodies.push(
     makeWall(585, 275, 930, 24, {
       angle: -0.055,
       render: blueColor,
     }),
-    makeWall(112, 350, 185, 22, {
-      angle: -1.0,
-      render: wallColor,
-    }),
-    makeWall(82, 490, 22, 300, {
+    makeWall(72, 405, 20, 250, {
       render: wallColor,
     }),
   );
 
-  // Smooth launch bowl/quarter-pipe. This single continuous Bezier curve
-  // connects the chute to an upward launch ramp without detached pieces.
+  // Smooth quarter-pipe begins flush with the left wall and curves continuously
+  // into the launcher. The opening is wider than a marble all the way through.
   const curvePoints: Array<{ x: number; y: number }> = [];
-  const curveSegments = 24;
+  const curveSegments = 30;
 
-  const p0 = { x: 82, y: 560 };
-  const p1 = { x: 82, y: 710 };
-  const p2 = { x: 195, y: 770 };
+  const p0 = { x: 54, y: 500 };
+  const p1 = { x: 54, y: 690 };
+  const p2 = { x: 180, y: 770 };
   const p3 = { x: 350, y: 625 };
 
   for (let index = 0; index <= curveSegments; index += 1) {
@@ -1165,20 +1162,20 @@ function buildGoalie() {
     const segmentAngle = Math.atan2(end.y - start.y, end.x - start.x);
 
     bodies.push(
-      makeWall(segmentX, segmentY, segmentLength, 20, {
+      makeWall(segmentX, segmentY, segmentLength, 18, {
         angle: segmentAngle,
         render: wallColor,
       }),
     );
   }
 
-  // Fast launcher placed inside the upward end of the quarter-pipe.
-  const launcher = makeSpinner(300, 625, 160, -0.24, "#f472b6");
+  // Fast launcher placed at the rising end of the quarter-pipe.
+  const launcher = makeSpinner(305, 625, 150, -0.24, "#f472b6");
   launcher.render.strokeStyle = "#831843";
   Body.setAngle(launcher, Math.PI / 2);
   bodies.push(launcher);
 
-  // Clearly separated landing platform, leaving a real jump gap after spinner.
+  // Landing platform with a real jump gap after the spinner.
   bodies.push(
     makeWall(700, 590, 430, 24, {
       angle: 0.035,
@@ -1186,10 +1183,19 @@ function buildGoalie() {
     }),
   );
 
-  // Reset zones catch missed launches, undershoots, and shots over the goal.
+  // Lava pit directly after the pipe. Sloped side walls guide every missed
+  // marble into the reset sensor so none can settle in the bottom-left corner.
   bodies.push(
-    makeRedReset(430, 735, 165, 90),
-    makeRedReset(730, FLOOR_Y - 18, 610, 34),
+    makeWall(405, 690, 120, 20, {
+      angle: 1.02,
+      render: wallColor,
+    }),
+    makeWall(505, 735, 120, 20, {
+      angle: -0.72,
+      render: wallColor,
+    }),
+    makeRedReset(455, 760, 210, 70),
+    makeRedReset(735, FLOOR_Y - 18, 600, 34),
     makeRedReset(WIDTH - 42, 300, 34, 180),
   );
 
