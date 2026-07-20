@@ -967,7 +967,7 @@ function buildWheel() {
   const centerY = 535;
   const hubRadius = 205;
   const spokeLength = 30;
-  const spokeThickness = 8;
+  const spokeThickness = 5;
   const spokeCount = 28;
   const spokeRadius = hubRadius + spokeLength / 2;
   const fullRotationMs = 12000;
@@ -981,11 +981,11 @@ function buildWheel() {
 
   // Fixed blue walls feed marbles onto the upper sides of the wheel.
   bodies.push(
-    makeWall(180, 320, 410, 24, {
+    makeWall(210, 335, 350, 20, {
       angle: 0.55,
       render: rampColor,
     }),
-    makeWall(WIDTH - 180, 320, 410, 24, {
+    makeWall(WIDTH - 210, 335, 350, 20, {
       angle: -0.55,
       render: rampColor,
     }),
@@ -1032,9 +1032,9 @@ function buildWheel() {
 
   // Pink plus spinners knock clustered marbles apart above the wheel.
   const spinnerData = [
-    { x: 365, y: 315, length: 108, speed: 0.055 },
-    { x: 550, y: 300, length: 118, speed: -0.06 },
-    { x: 735, y: 315, length: 108, speed: 0.055 },
+    { x: 365, y: 315, length: 96, speed: 0.11 },
+    { x: 550, y: 275, length: 104, speed: -0.12 },
+    { x: 735, y: 315, length: 96, speed: 0.11 },
   ];
 
   spinnerData.forEach(({ x, y, length, speed }) => {
