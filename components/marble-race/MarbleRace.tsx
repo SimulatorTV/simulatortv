@@ -100,6 +100,9 @@ const CATEGORY_MARBLE = 0x0001;
 const CATEGORY_STAGE = 0x0002;
 const CATEGORY_SENSOR = 0x0004;
 
+type PlaybackSpeed = 0.5 | 1 | 2 | 4;
+const PLAYBACK_SPEEDS: PlaybackSpeed[] = [0.5, 1, 2, 4];
+
 const buttonStyle: React.CSSProperties = {
   minWidth: 112,
   padding: "12px 18px",
@@ -1147,6 +1150,7 @@ export default function MarbleRace({
   const engineRef = useRef<Engine | null>(null);
   const renderRef = useRef<Render | null>(null);
   const runnerRef = useRef<Runner | null>(null);
+  const playbackSpeedRef = useRef<PlaybackSpeed>(1);
   const marblesRef = useRef<Map<number, MarbleMeta>>(new Map());
   const gluedMarblesRef = useRef<
     Map<
@@ -1179,6 +1183,7 @@ export default function MarbleRace({
   const [round, setRound] = useState(1);
   const [started, setStarted] = useState(false);
   const [paused, setPaused] = useState(false);
+  const [playbackSpeed, setPlaybackSpeed] = useState<PlaybackSpeed>(1);
   const [qualifiedCount, setQualifiedCount] = useState(0);
   const [qualifiedThisRound, setQualifiedThisRound] = useState<
     MarbleContestant[]
@@ -1300,6 +1305,7 @@ export default function MarbleRace({
       const engine = Engine.create({
         gravity: { x: 0, y: 1.18, scale: 0.001 },
       });
+      engine.timing.timeScale = playbackSpeedRef.current;
       engine.positionIterations = 10;
       engine.velocityIterations = 8;
       engine.constraintIterations = 4;
@@ -1921,6 +1927,15 @@ export default function MarbleRace({
     }
   }, [seasonStarted, started, winner]);
 
+  const changePlaybackSpeed = useCallback((speed: PlaybackSpeed) => {
+    playbackSpeedRef.current = speed;
+    setPlaybackSpeed(speed);
+
+    if (engineRef.current) {
+      engineRef.current.timing.timeScale = speed;
+    }
+  }, []);
+
   const togglePause = useCallback(() => {
     if (!runnerRef.current || !engineRef.current || winner || !seasonStarted) {
       return;
@@ -1942,6 +1957,8 @@ export default function MarbleRace({
     setSeasonStarted(false);
     setStarted(false);
     setPaused(false);
+    playbackSpeedRef.current = 1;
+    setPlaybackSpeed(1);
     setWinner(null);
     setAnnouncement(null);
     setEliminationNotice(null);
@@ -2246,6 +2263,55 @@ export default function MarbleRace({
             >
               {paused ? "Resume" : "Pause"}
             </button>
+          )}
+
+          {seasonStarted && (
+            <div
+              aria-label="Playback speed"
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+                padding: 5,
+                border: "2px solid #334155",
+                borderRadius: 12,
+                background: "#0f172a",
+              }}
+            >
+              {PLAYBACK_SPEEDS.map((speed) => {
+                const selected = playbackSpeed === speed;
+
+                return (
+                  <button
+                    key={speed}
+                    type="button"
+                    onClick={() => changePlaybackSpeed(speed)}
+                    aria-pressed={selected}
+                    title={`Playback speed ${speed}x`}
+                    style={{
+                      minWidth: 50,
+                      padding: "8px 10px",
+                      border: selected
+                        ? "2px solid #86efac"
+                        : "2px solid #475569",
+                      borderRadius: 8,
+                      background: selected
+                        ? "linear-gradient(180deg, #4ade80 0%, #16a34a 100%)"
+                        : "linear-gradient(180deg, #475569 0%, #1e293b 100%)",
+                      color: selected ? "#052e16" : "#ffffff",
+                      fontSize: 14,
+                      fontWeight: 1000,
+                      cursor: "pointer",
+                      boxShadow: selected
+                        ? "0 2px 0 #166534"
+                        : "0 2px 0 #0f172a",
+                    }}
+                  >
+                    {speed}x
+                  </button>
+                );
+              })}
+            </div>
           )}
 
           <button style={buttonStyle} onClick={restartSeason}>
