@@ -44,7 +44,7 @@ type LevelId =
   | "column-rush"
   | "staircase"
   | "glue-trap"
-  | "bingo";
+  | "wheel";
 
 type LevelDefinition = {
   id: LevelId;
@@ -78,13 +78,13 @@ type ObstacleBody = Matter.Body & {
     glueSpeed?: number;
     glueNextLaunch?: number;
     glueLength?: number;
-    bingoRotor?: boolean;
-    bingoCenterX?: number;
-    bingoCenterY?: number;
-    bingoOffsetX?: number;
-    bingoOffsetY?: number;
-    bingoBaseAngle?: number;
-    bingoAngularSpeed?: number;
+    wheelRotor?: boolean;
+    wheelCenterX?: number;
+    wheelCenterY?: number;
+    wheelOffsetX?: number;
+    wheelOffsetY?: number;
+    wheelBaseAngle?: number;
+    wheelAngularSpeed?: number;
   };
 };
 
@@ -326,7 +326,7 @@ function makeGlueLine(
 }
 
 
-function makeBingoRotorPiece(
+function makeWheelSpoke(
   centerX: number,
   centerY: number,
   offsetX: number,
@@ -361,74 +361,17 @@ function makeBingoRotorPiece(
 
   body.plugin = {
     kind: "stage",
-    bingoRotor: true,
-    bingoCenterX: centerX,
-    bingoCenterY: centerY,
-    bingoOffsetX: offsetX,
-    bingoOffsetY: offsetY,
-    bingoBaseAngle: baseAngle,
-    bingoAngularSpeed: angularSpeed,
+    wheelRotor: true,
+    wheelCenterX: centerX,
+    wheelCenterY: centerY,
+    wheelOffsetX: offsetX,
+    wheelOffsetY: offsetY,
+    wheelBaseAngle: baseAngle,
+    wheelAngularSpeed: angularSpeed,
   };
 
   Body.setAngle(body, baseAngle);
   return body;
-}
-
-function addBingoCup(
-  bodies: ObstacleBody[],
-  centerX: number,
-  centerY: number,
-  directionAngle: number,
-  angularSpeed: number,
-) {
-  const cupRadius = 140;
-  const insideHalfWidth = 31;
-  const sideLength = 52;
-
-  const pieces = [
-    {
-      offsetX: cupRadius,
-      offsetY: 0,
-      width: 12,
-      height: insideHalfWidth * 2 + 12,
-      angle: 0,
-    },
-    {
-      offsetX: cupRadius + sideLength / 2,
-      offsetY: -(insideHalfWidth + 6),
-      width: sideLength,
-      height: 12,
-      angle: 0,
-    },
-    {
-      offsetX: cupRadius + sideLength / 2,
-      offsetY: insideHalfWidth + 6,
-      width: sideLength,
-      height: 12,
-      angle: 0,
-    },
-  ];
-
-  pieces.forEach((piece) => {
-    const cos = Math.cos(directionAngle);
-    const sin = Math.sin(directionAngle);
-    const rotatedX = piece.offsetX * cos - piece.offsetY * sin;
-    const rotatedY = piece.offsetX * sin + piece.offsetY * cos;
-
-    bodies.push(
-      makeBingoRotorPiece(
-        centerX,
-        centerY,
-        rotatedX,
-        rotatedY,
-        piece.width,
-        piece.height,
-        directionAngle + piece.angle,
-        angularSpeed,
-        "#38bdf8",
-      ),
-    );
-  });
 }
 
 function makeGreenFinish(x: number, y: number, width: number, height: number) {
@@ -1014,54 +957,97 @@ function buildGlueTrap() {
 
 
 
-function buildBingo() {
+function buildWheel() {
   const bodies = makeBaseStage();
 
   const centerX = WIDTH / 2;
-  const centerY = 510;
-  const hubRadius = 140;
-  const fullRotationMs = 8000;
+  const centerY = 535;
+  const hubRadius = 205;
+  const spokeLength = 30;
+  const spokeThickness = 8;
+  const spokeCount = 28;
+  const spokeRadius = hubRadius + spokeLength / 2;
+  const fullRotationMs = 12000;
   const angularSpeed = (Math.PI * 2) / fullRotationMs;
 
-  // Funnel walls now touch the hub.
-  const wallLen = 470;
+  const rampColor = {
+    fillStyle: "#3b82f6",
+    strokeStyle: "#1e3a8a",
+    lineWidth: 4,
+  };
+
+  // Fixed blue walls feed marbles onto the upper sides of the wheel.
   bodies.push(
-    makeWall(centerX - 215, 315, wallLen, 24, { angle: 0.46 }),
-    makeWall(centerX + 215, 315, wallLen, 24, { angle: -0.46 }),
+    makeWall(180, 320, 410, 24, {
+      angle: 0.55,
+      render: rampColor,
+    }),
+    makeWall(WIDTH - 180, 320, 410, 24, {
+      angle: -0.55,
+      render: rampColor,
+    }),
   );
 
+  // Large stationary center circle.
   const hub = Bodies.circle(centerX, centerY, hubRadius, {
-    isStatic:true,
-    friction:0,
-    restitution:0.96,
-    collisionFilter:{category:CATEGORY_STAGE,mask:CATEGORY_MARBLE},
-    render:{fillStyle:"#f59e0b",strokeStyle:"#78350f",lineWidth:5},
+    isStatic: true,
+    friction: 0,
+    frictionStatic: 0,
+    restitution: 0.9,
+    collisionFilter: {
+      category: CATEGORY_STAGE,
+      mask: CATEGORY_MARBLE,
+    },
+    render: {
+      fillStyle: "#111827",
+      strokeStyle: "#020617",
+      lineWidth: 5,
+    },
   }) as ObstacleBody;
-  hub.plugin={kind:"stage"};
+  hub.plugin = { kind: "stage" };
   bodies.push(hub);
 
-  // Legs start directly on the edge of the circle.
-  const legLength=290;
-  const legOffset=hubRadius + legLength/2;
-  [0,Math.PI].forEach(a=>{
-    bodies.push(
-      makeBingoRotorPiece(
-        centerX,centerY,
-        Math.cos(a)*legOffset,
-        Math.sin(a)*legOffset,
-        legLength,24,a,angularSpeed,"#a855f7"
-      )
-    );
-  });
+  // Short spokes rotate slowly around the circle. Their gaps create nooks
+  // that can hold one marble until the wheel carries it around.
+  for (let index = 0; index < spokeCount; index += 1) {
+    const angle = (index / spokeCount) * Math.PI * 2;
 
-  // Divots are carved into the rim instead of floating outside.
-  addBingoCup(bodies,centerX,centerY,Math.PI/2,angularSpeed);
-  addBingoCup(bodies,centerX,centerY,Math.PI*1.5,angularSpeed);
+    bodies.push(
+      makeWheelSpoke(
+        centerX,
+        centerY,
+        Math.cos(angle) * spokeRadius,
+        Math.sin(angle) * spokeRadius,
+        spokeLength,
+        spokeThickness,
+        angle,
+        angularSpeed,
+        "#111827",
+      ),
+    );
+  }
+
+  // Pink plus spinners knock clustered marbles apart above the wheel.
+  const spinnerData = [
+    { x: 365, y: 315, length: 108, speed: 0.055 },
+    { x: 550, y: 300, length: 118, speed: -0.06 },
+    { x: 735, y: 315, length: 108, speed: 0.055 },
+  ];
+
+  spinnerData.forEach(({ x, y, length, speed }) => {
+    const horizontal = makeSpinner(x, y, length, speed, "#f472b6");
+    horizontal.render.strokeStyle = "#831843";
+
+    const vertical = makeSpinner(x, y, length, speed, "#f472b6");
+    vertical.render.strokeStyle = "#831843";
+    Body.setAngle(vertical, Math.PI / 2);
+
+    bodies.push(horizontal, vertical);
+  });
 
   bodies.push(makeFullFloorZone("green-finish"));
   return bodies;
 }
-
 
 
 const LEVELS: LevelDefinition[] = [
@@ -1127,11 +1113,11 @@ const LEVELS: LevelDefinition[] = [
     build: buildGlueTrap,
   },
   {
-    id: "bingo",
-    name: "Bingo",
+    id: "wheel",
+    name: "Wheel",
     description:
-      "A slow four-part wheel alternates shuffle arms with one-marble divots that carry lucky marbles to the green floor.",
-    build: buildBingo,
+      "Fixed blue ramps feed marbles onto a slow rotating spoke wheel while pink spinners break up clusters.",
+    build: buildWheel,
   },
 ];
 
@@ -1387,31 +1373,31 @@ export default function MarbleRace({
           }
 
           if (
-            body.plugin?.bingoRotor &&
-            body.plugin.bingoCenterX !== undefined &&
-            body.plugin.bingoCenterY !== undefined &&
-            body.plugin.bingoOffsetX !== undefined &&
-            body.plugin.bingoOffsetY !== undefined &&
-            body.plugin.bingoBaseAngle !== undefined &&
-            body.plugin.bingoAngularSpeed !== undefined
+            body.plugin?.wheelRotor &&
+            body.plugin.wheelCenterX !== undefined &&
+            body.plugin.wheelCenterY !== undefined &&
+            body.plugin.wheelOffsetX !== undefined &&
+            body.plugin.wheelOffsetY !== undefined &&
+            body.plugin.wheelBaseAngle !== undefined &&
+            body.plugin.wheelAngularSpeed !== undefined
           ) {
-            const rotation = timestamp * body.plugin.bingoAngularSpeed;
+            const rotation = timestamp * body.plugin.wheelAngularSpeed;
             const cos = Math.cos(rotation);
             const sin = Math.sin(rotation);
             const rotatedX =
-              body.plugin.bingoOffsetX * cos -
-              body.plugin.bingoOffsetY * sin;
+              body.plugin.wheelOffsetX * cos -
+              body.plugin.wheelOffsetY * sin;
             const rotatedY =
-              body.plugin.bingoOffsetX * sin +
-              body.plugin.bingoOffsetY * cos;
+              body.plugin.wheelOffsetX * sin +
+              body.plugin.wheelOffsetY * cos;
 
             Body.setPosition(body, {
-              x: body.plugin.bingoCenterX + rotatedX,
-              y: body.plugin.bingoCenterY + rotatedY,
+              x: body.plugin.wheelCenterX + rotatedX,
+              y: body.plugin.wheelCenterY + rotatedY,
             });
             Body.setAngle(
               body,
-              body.plugin.bingoBaseAngle + rotation,
+              body.plugin.wheelBaseAngle + rotation,
             );
           }
 
