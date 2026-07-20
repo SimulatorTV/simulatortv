@@ -1113,69 +1113,58 @@ function buildGoalie() {
     lineWidth: 4,
   };
 
-  // Wide upper funnel. The blue ramp feeds directly into the open left chute
-  // without any diagonal corner poking through the marble path.
+  // The upper ramp runs directly toward the left wall. Marbles fall cleanly
+  // down the wall into the half-pipe with no extra gray wall in the chute.
   bodies.push(
     makeWall(585, 275, 930, 24, {
       angle: -0.055,
       render: blueColor,
     }),
-    makeWall(72, 405, 20, 250, {
-      render: wallColor,
-    }),
   );
 
-  // Smooth quarter-pipe begins flush with the left wall and curves continuously
-  // into the launcher. The opening is wider than a marble all the way through.
-  const curvePoints: Array<{ x: number; y: number }> = [];
-  const curveSegments = 30;
+  // True circular half-pipe. Its left edge begins inside the left stage wall,
+  // so the curve visibly comes straight out of the wall with no gap.
+  const pipeCenterX = 190;
+  const pipeCenterY = 555;
+  const pipeRadius = 155;
+  const pipeSegments = 32;
+  const pipeThickness = 18;
 
-  const p0 = { x: 54, y: 500 };
-  const p1 = { x: 54, y: 690 };
-  const p2 = { x: 180, y: 770 };
-  const p3 = { x: 350, y: 625 };
+  for (let index = 0; index < pipeSegments; index += 1) {
+    const angle0 = Math.PI - (index / pipeSegments) * Math.PI;
+    const angle1 = Math.PI - ((index + 1) / pipeSegments) * Math.PI;
 
-  for (let index = 0; index <= curveSegments; index += 1) {
-    const t = index / curveSegments;
-    const inverse = 1 - t;
+    const x0 = pipeCenterX + Math.cos(angle0) * pipeRadius;
+    const y0 = pipeCenterY + Math.sin(angle0) * pipeRadius;
+    const x1 = pipeCenterX + Math.cos(angle1) * pipeRadius;
+    const y1 = pipeCenterY + Math.sin(angle1) * pipeRadius;
 
-    curvePoints.push({
-      x:
-        inverse ** 3 * p0.x +
-        3 * inverse ** 2 * t * p1.x +
-        3 * inverse * t ** 2 * p2.x +
-        t ** 3 * p3.x,
-      y:
-        inverse ** 3 * p0.y +
-        3 * inverse ** 2 * t * p1.y +
-        3 * inverse * t ** 2 * p2.y +
-        t ** 3 * p3.y,
-    });
-  }
-
-  for (let index = 0; index < curvePoints.length - 1; index += 1) {
-    const start = curvePoints[index];
-    const end = curvePoints[index + 1];
-    const segmentX = (start.x + end.x) / 2;
-    const segmentY = (start.y + end.y) / 2;
-    const segmentLength = Math.hypot(end.x - start.x, end.y - start.y) + 4;
-    const segmentAngle = Math.atan2(end.y - start.y, end.x - start.x);
+    const segmentX = (x0 + x1) / 2;
+    const segmentY = (y0 + y1) / 2;
+    const segmentLength = Math.hypot(x1 - x0, y1 - y0) + 4;
+    const segmentAngle = Math.atan2(y1 - y0, x1 - x0);
 
     bodies.push(
-      makeWall(segmentX, segmentY, segmentLength, 18, {
+      makeWall(segmentX, segmentY, segmentLength, pipeThickness, {
         angle: segmentAngle,
         render: wallColor,
       }),
     );
   }
 
-  // Fast launcher placed at the rising end of the quarter-pipe.
-  const launcher = makeSpinner(305, 625, 150, -0.24, "#f472b6");
+  // The spinner is centered on the exact same circle as the half-pipe.
+  // Its tips trace just inside the curve during the entire rotation.
+  const launcher = makeSpinner(
+    pipeCenterX,
+    pipeCenterY,
+    (pipeRadius - 24) * 2,
+    -0.22,
+    "#f472b6",
+  );
   launcher.render.strokeStyle = "#831843";
-  Body.setAngle(launcher, Math.PI / 2);
   bodies.push(launcher);
 
-  // Landing platform with a real jump gap after the spinner.
+  // Long landing platform with a clear jump gap after the pipe.
   bodies.push(
     makeWall(700, 590, 430, 24, {
       angle: 0.035,
@@ -1183,19 +1172,19 @@ function buildGoalie() {
     }),
   );
 
-  // Lava pit directly after the pipe. Sloped side walls guide every missed
-  // marble into the reset sensor so none can settle in the bottom-left corner.
+  // Open lava pit after the pipe. These are only the two pit walls, both
+  // leading downward into one large reset sensor.
   bodies.push(
-    makeWall(405, 690, 120, 20, {
-      angle: 1.02,
+    makeWall(382, 680, 150, 20, {
+      angle: 1.18,
       render: wallColor,
     }),
-    makeWall(505, 735, 120, 20, {
-      angle: -0.72,
+    makeWall(505, 680, 150, 20, {
+      angle: -1.18,
       render: wallColor,
     }),
-    makeRedReset(455, 760, 210, 70),
-    makeRedReset(735, FLOOR_Y - 18, 600, 34),
+    makeRedReset(444, 760, 205, 70),
+    makeRedReset(745, FLOOR_Y - 18, 580, 34),
     makeRedReset(WIDTH - 42, 300, 34, 180),
   );
 
@@ -1228,18 +1217,10 @@ function buildGoalie() {
     ),
   );
 
-  // Goalie moves vertically across the goal mouth.
-  const goalie = makeWall(goalLeftX + 18, 535, 24, 92, {
-    render: {
-      fillStyle: "#facc15",
-      strokeStyle: "#854d0e",
-      lineWidth: 3,
-    },
-    restitution: 1.08,
-  });
-
+  // Red moving goalie: touching it immediately respawns the marble.
+  const goalie = makeRedReset(goalLeftX + 18, 535, 24, 92);
   goalie.plugin = {
-    kind: "stage",
+    kind: "red-reset",
     moveAxis: "y",
     moveOriginX: goalLeftX + 18,
     moveOriginY: 535,
