@@ -43,7 +43,8 @@ type LevelId =
   | "minefield"
   | "column-rush"
   | "staircase"
-  | "glue-trap";
+  | "glue-trap"
+  | "bingo";
 
 type LevelDefinition = {
   id: LevelId;
@@ -77,6 +78,13 @@ type ObstacleBody = Matter.Body & {
     glueSpeed?: number;
     glueNextLaunch?: number;
     glueLength?: number;
+    bingoRotor?: boolean;
+    bingoCenterX?: number;
+    bingoCenterY?: number;
+    bingoOffsetX?: number;
+    bingoOffsetY?: number;
+    bingoBaseAngle?: number;
+    bingoAngularSpeed?: number;
   };
 };
 
@@ -315,6 +323,112 @@ function makeGlueLine(
   };
 
   return body;
+}
+
+
+function makeBingoRotorPiece(
+  centerX: number,
+  centerY: number,
+  offsetX: number,
+  offsetY: number,
+  width: number,
+  height: number,
+  baseAngle: number,
+  angularSpeed: number,
+  color: string,
+) {
+  const body = Bodies.rectangle(
+    centerX + offsetX,
+    centerY + offsetY,
+    width,
+    height,
+    {
+      isStatic: true,
+      friction: 0,
+      frictionStatic: 0,
+      restitution: 0.98,
+      collisionFilter: {
+        category: CATEGORY_STAGE,
+        mask: CATEGORY_MARBLE,
+      },
+      render: {
+        fillStyle: color,
+        strokeStyle: "#1e293b",
+        lineWidth: 3,
+      },
+    },
+  ) as ObstacleBody;
+
+  body.plugin = {
+    kind: "stage",
+    bingoRotor: true,
+    bingoCenterX: centerX,
+    bingoCenterY: centerY,
+    bingoOffsetX: offsetX,
+    bingoOffsetY: offsetY,
+    bingoBaseAngle: baseAngle,
+    bingoAngularSpeed: angularSpeed,
+  };
+
+  Body.setAngle(body, baseAngle);
+  return body;
+}
+
+function addBingoCup(
+  bodies: ObstacleBody[],
+  centerX: number,
+  centerY: number,
+  directionAngle: number,
+  angularSpeed: number,
+) {
+  const cupRadius = 118;
+  const insideHalfWidth = 31;
+  const sideLength = 52;
+
+  const pieces = [
+    {
+      offsetX: cupRadius,
+      offsetY: 0,
+      width: 12,
+      height: insideHalfWidth * 2 + 12,
+      angle: 0,
+    },
+    {
+      offsetX: cupRadius + sideLength / 2,
+      offsetY: -(insideHalfWidth + 6),
+      width: sideLength,
+      height: 12,
+      angle: 0,
+    },
+    {
+      offsetX: cupRadius + sideLength / 2,
+      offsetY: insideHalfWidth + 6,
+      width: sideLength,
+      height: 12,
+      angle: 0,
+    },
+  ];
+
+  pieces.forEach((piece) => {
+    const cos = Math.cos(directionAngle);
+    const sin = Math.sin(directionAngle);
+    const rotatedX = piece.offsetX * cos - piece.offsetY * sin;
+    const rotatedY = piece.offsetX * sin + piece.offsetY * cos;
+
+    bodies.push(
+      makeBingoRotorPiece(
+        centerX,
+        centerY,
+        rotatedX,
+        rotatedY,
+        piece.width,
+        piece.height,
+        directionAngle + piece.angle,
+        angularSpeed,
+        "#38bdf8",
+      ),
+    );
+  });
 }
 
 function makeGreenFinish(x: number, y: number, width: number, height: number) {
@@ -898,6 +1012,79 @@ function buildGlueTrap() {
   return bodies;
 }
 
+
+function buildBingo() {
+  const bodies = makeBaseStage();
+
+  const centerX = WIDTH / 2;
+  const centerY = 500;
+  const fullRotationMs = 8000;
+  const angularSpeed = (Math.PI * 2) / fullRotationMs;
+
+  bodies.push(
+    makeWall(245, 330, 455, 24, {
+      angle: 0.24,
+      render: {
+        fillStyle: "#94a3b8",
+        strokeStyle: "#1e293b",
+        lineWidth: 3,
+      },
+    }),
+    makeWall(855, 330, 455, 24, {
+      angle: -0.24,
+      render: {
+        fillStyle: "#94a3b8",
+        strokeStyle: "#1e293b",
+        lineWidth: 3,
+      },
+    }),
+  );
+
+  const hub = Bodies.circle(centerX, centerY, 76, {
+    isStatic: true,
+    friction: 0,
+    frictionStatic: 0,
+    restitution: 0.96,
+    collisionFilter: {
+      category: CATEGORY_STAGE,
+      mask: CATEGORY_MARBLE,
+    },
+    render: {
+      fillStyle: "#f59e0b",
+      strokeStyle: "#78350f",
+      lineWidth: 5,
+    },
+  }) as ObstacleBody;
+  hub.plugin = { kind: "stage" };
+  bodies.push(hub);
+
+  const legLength = 285;
+  const legOffset = 76 + legLength / 2;
+
+  [0, Math.PI].forEach((angle) => {
+    bodies.push(
+      makeBingoRotorPiece(
+        centerX,
+        centerY,
+        Math.cos(angle) * legOffset,
+        Math.sin(angle) * legOffset,
+        legLength,
+        22,
+        angle,
+        angularSpeed,
+        "#a855f7",
+      ),
+    );
+  });
+
+  addBingoCup(bodies, centerX, centerY, Math.PI / 2, angularSpeed);
+  addBingoCup(bodies, centerX, centerY, Math.PI * 1.5, angularSpeed);
+
+  bodies.push(makeFullFloorZone("green-finish"));
+  return bodies;
+}
+
+
 const LEVELS: LevelDefinition[] = [
   {
     id: "paddle-bowl",
@@ -959,6 +1146,13 @@ const LEVELS: LevelDefinition[] = [
     description:
       "Avoid fifteen glue bars that carry trapped marbles toward red side walls.",
     build: buildGlueTrap,
+  },
+  {
+    id: "bingo",
+    name: "Bingo",
+    description:
+      "A slow four-part wheel alternates shuffle arms with one-marble divots that carry lucky marbles to the green floor.",
+    build: buildBingo,
   },
 ];
 
@@ -1211,6 +1405,35 @@ export default function MarbleRace({
         ) as ObstacleBody[]) {
           if (body.plugin?.rotateSpeed) {
             Body.setAngle(body, body.angle + body.plugin.rotateSpeed);
+          }
+
+          if (
+            body.plugin?.bingoRotor &&
+            body.plugin.bingoCenterX !== undefined &&
+            body.plugin.bingoCenterY !== undefined &&
+            body.plugin.bingoOffsetX !== undefined &&
+            body.plugin.bingoOffsetY !== undefined &&
+            body.plugin.bingoBaseAngle !== undefined &&
+            body.plugin.bingoAngularSpeed !== undefined
+          ) {
+            const rotation = timestamp * body.plugin.bingoAngularSpeed;
+            const cos = Math.cos(rotation);
+            const sin = Math.sin(rotation);
+            const rotatedX =
+              body.plugin.bingoOffsetX * cos -
+              body.plugin.bingoOffsetY * sin;
+            const rotatedY =
+              body.plugin.bingoOffsetX * sin +
+              body.plugin.bingoOffsetY * cos;
+
+            Body.setPosition(body, {
+              x: body.plugin.bingoCenterX + rotatedX,
+              y: body.plugin.bingoCenterY + rotatedY,
+            });
+            Body.setAngle(
+              body,
+              body.plugin.bingoBaseAngle + rotation,
+            );
           }
 
           if (
