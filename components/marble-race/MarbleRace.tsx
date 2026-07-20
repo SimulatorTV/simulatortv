@@ -1130,7 +1130,7 @@ function buildGoalie() {
   const pipeSegments = 32;
   const pipeThickness = 18;
 
-  for (let index = 0; index < pipeSegments; index += 1) {
+  for (let index = 0; index < pipeSegments - 3; index += 1) {
     const angle0 = Math.PI - (index / pipeSegments) * Math.PI;
     const angle1 = Math.PI - ((index + 1) / pipeSegments) * Math.PI;
 
@@ -1154,20 +1154,39 @@ function buildGoalie() {
 
   // The spinner is centered on the exact same circle as the half-pipe.
   // Its tips trace just inside the curve during the entire rotation.
-  const launcher = makeSpinner(
+  const launcher = Bodies.rectangle(
     pipeCenterX,
     pipeCenterY,
     (pipeRadius - 24) * 2,
-    -0.22,
-    "#f472b6",
-  );
-  launcher.render.strokeStyle = "#831843";
+    14,
+    {
+      isStatic: true,
+      friction: 0,
+      frictionStatic: 0,
+      restitution: 1.24,
+      collisionFilter: {
+        category: CATEGORY_STAGE,
+        mask: CATEGORY_MARBLE,
+      },
+      render: {
+        fillStyle: "#f472b6",
+        strokeStyle: "#831843",
+        lineWidth: 3,
+      },
+    },
+  ) as ObstacleBody;
+
+  launcher.plugin = {
+    kind: "stage",
+    rotateSpeed: -0.14,
+  };
+
   bodies.push(launcher);
 
   // Long landing platform with a clear jump gap after the pipe.
   bodies.push(
-    makeWall(700, 590, 430, 24, {
-      angle: 0.035,
+    makeWall(700, 628, 430, 24, {
+      angle: 0.012,
       render: wallColor,
     }),
   );
