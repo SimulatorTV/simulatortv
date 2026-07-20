@@ -1113,104 +1113,116 @@ function buildGoalie() {
     lineWidth: 4,
   };
 
-  // Upper funnel slopes almost the entire spawn toward a narrow chute on the
-  // far left. The short left guide keeps marbles from escaping the funnel.
+  // Long upper funnel that steadily feeds every marble into the open chute.
   bodies.push(
-    makeWall(565, 270, 930, 24, {
-      angle: -0.045,
+    makeWall(585, 275, 930, 24, {
+      angle: -0.055,
       render: blueColor,
     }),
-    makeWall(115, 360, 230, 22, {
-      angle: -0.98,
+    makeWall(112, 350, 185, 22, {
+      angle: -1.0,
       render: wallColor,
     }),
-    makeWall(92, 500, 22, 360, {
+    makeWall(82, 490, 22, 300, {
       render: wallColor,
     }),
   );
 
-  // Smooth quarter-pipe launch bowl made from many short tangent segments.
-  // The curve runs from the left chute into an upward launch on the right.
-  const quarterPipeCenterX = 110;
-  const quarterPipeCenterY = 625;
-  const quarterPipeRadius = 175;
-  const quarterPipeStartAngle = Math.PI;
-  const quarterPipeEndAngle = Math.PI / 2;
-  const quarterPipeSegments = 18;
-  const quarterPipeThickness = 20;
+  // Smooth launch bowl/quarter-pipe. This single continuous Bezier curve
+  // connects the chute to an upward launch ramp without detached pieces.
+  const curvePoints: Array<{ x: number; y: number }> = [];
+  const curveSegments = 24;
 
-  for (let index = 0; index < quarterPipeSegments; index += 1) {
-    const t0 = index / quarterPipeSegments;
-    const t1 = (index + 1) / quarterPipeSegments;
-    const angle0 =
-      quarterPipeStartAngle +
-      (quarterPipeEndAngle - quarterPipeStartAngle) * t0;
-    const angle1 =
-      quarterPipeStartAngle +
-      (quarterPipeEndAngle - quarterPipeStartAngle) * t1;
+  const p0 = { x: 82, y: 560 };
+  const p1 = { x: 82, y: 710 };
+  const p2 = { x: 195, y: 770 };
+  const p3 = { x: 350, y: 625 };
 
-    const x0 = quarterPipeCenterX + Math.cos(angle0) * quarterPipeRadius;
-    const y0 = quarterPipeCenterY - Math.sin(angle0) * quarterPipeRadius;
-    const x1 = quarterPipeCenterX + Math.cos(angle1) * quarterPipeRadius;
-    const y1 = quarterPipeCenterY - Math.sin(angle1) * quarterPipeRadius;
+  for (let index = 0; index <= curveSegments; index += 1) {
+    const t = index / curveSegments;
+    const inverse = 1 - t;
 
-    const segmentX = (x0 + x1) / 2;
-    const segmentY = (y0 + y1) / 2;
-    const segmentLength = Math.hypot(x1 - x0, y1 - y0) + 3;
-    const segmentAngle = Math.atan2(y1 - y0, x1 - x0);
+    curvePoints.push({
+      x:
+        inverse ** 3 * p0.x +
+        3 * inverse ** 2 * t * p1.x +
+        3 * inverse * t ** 2 * p2.x +
+        t ** 3 * p3.x,
+      y:
+        inverse ** 3 * p0.y +
+        3 * inverse ** 2 * t * p1.y +
+        3 * inverse * t ** 2 * p2.y +
+        t ** 3 * p3.y,
+    });
+  }
+
+  for (let index = 0; index < curvePoints.length - 1; index += 1) {
+    const start = curvePoints[index];
+    const end = curvePoints[index + 1];
+    const segmentX = (start.x + end.x) / 2;
+    const segmentY = (start.y + end.y) / 2;
+    const segmentLength = Math.hypot(end.x - start.x, end.y - start.y) + 4;
+    const segmentAngle = Math.atan2(end.y - start.y, end.x - start.x);
 
     bodies.push(
-      makeWall(segmentX, segmentY, segmentLength, quarterPipeThickness, {
+      makeWall(segmentX, segmentY, segmentLength, 20, {
         angle: segmentAngle,
         render: wallColor,
       }),
     );
   }
 
-  // Short exit lip keeps the final part of the curve aimed at the launcher.
-  bodies.push(
-    makeWall(292, 510, 105, 20, {
-      angle: -1.02,
-      render: wallColor,
-    }),
-  );
-
-  // Fast vertical kicker that launches marbles toward the right-hand goal.
-  const launcher = makeSpinner(205, 610, 165, -0.24, "#f472b6");
+  // Fast launcher placed inside the upward end of the quarter-pipe.
+  const launcher = makeSpinner(300, 625, 160, -0.24, "#f472b6");
   launcher.render.strokeStyle = "#831843";
   Body.setAngle(launcher, Math.PI / 2);
   bodies.push(launcher);
 
-  // Missing the launcher sends a marble into this reset pit.
-  bodies.push(makeRedReset(405, 722, 150, 92));
-
-  // A small jump separates the launch bowl from the long goal approach.
+  // Clearly separated landing platform, leaving a real jump gap after spinner.
   bodies.push(
-    makeWall(705, 590, 430, 24, {
+    makeWall(700, 590, 430, 24, {
       angle: 0.035,
       render: wallColor,
     }),
   );
 
-  bodies.push(makeRedReset(WIDTH-42, 260, 34, 150));
+  // Reset zones catch missed launches, undershoots, and shots over the goal.
+  bodies.push(
+    makeRedReset(430, 735, 165, 90),
+    makeRedReset(730, FLOOR_Y - 18, 610, 34),
+    makeRedReset(WIDTH - 42, 300, 34, 180),
+  );
 
-  // Goal frame. The green sensor is inside the back of the goal.
+  // Goal frame with the green advance sensor at the back.
   const goalTopY = 430;
   const goalBottomY = 640;
   const goalLeftX = 930;
   const goalBackX = WIDTH - 48;
 
   bodies.push(
-    makeWall((goalLeftX + goalBackX) / 2, goalTopY, goalBackX - goalLeftX, 20, {
-      render: wallColor,
-    }),
-    makeWall((goalLeftX + goalBackX) / 2, goalBottomY, goalBackX - goalLeftX, 20, {
-      render: wallColor,
-    }),
-    makeGreenFinish(goalBackX - 4, (goalTopY + goalBottomY) / 2, 24, goalBottomY - goalTopY - 20),
+    makeWall(
+      (goalLeftX + goalBackX) / 2,
+      goalTopY,
+      goalBackX - goalLeftX,
+      20,
+      { render: wallColor },
+    ),
+    makeWall(
+      (goalLeftX + goalBackX) / 2,
+      goalBottomY,
+      goalBackX - goalLeftX,
+      20,
+      { render: wallColor },
+    ),
+    makeGreenFinish(
+      goalBackX - 4,
+      (goalTopY + goalBottomY) / 2,
+      24,
+      goalBottomY - goalTopY - 20,
+    ),
   );
 
-  // The goalie sweeps vertically through the mouth of the goal.
+  // Goalie moves vertically across the goal mouth.
   const goalie = makeWall(goalLeftX + 18, 535, 24, 92, {
     render: {
       fillStyle: "#facc15",
@@ -1219,6 +1231,7 @@ function buildGoalie() {
     },
     restitution: 1.08,
   });
+
   goalie.plugin = {
     kind: "stage",
     moveAxis: "y",
@@ -1228,11 +1241,8 @@ function buildGoalie() {
     moveSpeed: 0.0038,
     movePhase: 0,
   };
+
   bodies.push(goalie);
-
-  // Any marble that falls below the playable approach resets.
-  bodies.push(makeRedReset(690, FLOOR_Y - 18, 650, 34));
-
   return bodies;
 }
 
