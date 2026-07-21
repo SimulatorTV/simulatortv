@@ -1733,6 +1733,7 @@ export default function MarbleRace({
   const renderRef = useRef<Render | null>(null);
   const runnerRef = useRef<Runner | null>(null);
   const playbackSpeedRef = useRef<PlaybackSpeed>(1);
+  const hoverPointerRef = useRef({ x: -1000, y: -1000 });
   const marblesRef = useRef<Map<number, MarbleMeta>>(new Map());
   const gluedMarblesRef = useRef<
     Map<
@@ -1895,9 +1896,24 @@ export default function MarbleRace({
         gravity: { x: 0, y: 1.18, scale: 0.001 },
       });
       engine.timing.timeScale = playbackSpeedRef.current;
-      engine.positionIterations = 10;
-      engine.velocityIterations = 8;
-      engine.constraintIterations = 4;
+      engine.positionIterations =
+        playbackSpeedRef.current >= 4
+          ? 28
+          : playbackSpeedRef.current >= 2
+            ? 18
+            : 10;
+      engine.velocityIterations =
+        playbackSpeedRef.current >= 4
+          ? 22
+          : playbackSpeedRef.current >= 2
+            ? 14
+            : 8;
+      engine.constraintIterations =
+        playbackSpeedRef.current >= 4
+          ? 8
+          : playbackSpeedRef.current >= 2
+            ? 6
+            : 4;
 
       const render = Render.create({
         element: sceneRef.current,
@@ -1957,6 +1973,23 @@ export default function MarbleRace({
       marblesRef.current = marbleMap;
       const mouse = Mouse.create(render.canvas);
 
+      const updateHoverPointer = (event: MouseEvent) => {
+        const bounds = render.canvas.getBoundingClientRect();
+        if (!bounds.width || !bounds.height) return;
+
+        hoverPointerRef.current = {
+          x: ((event.clientX - bounds.left) / bounds.width) * WIDTH,
+          y: ((event.clientY - bounds.top) / bounds.height) * HEIGHT,
+        };
+      };
+
+      const clearHoverPointer = () => {
+        hoverPointerRef.current = { x: -1000, y: -1000 };
+      };
+
+      render.canvas.addEventListener("mousemove", updateHoverPointer);
+      render.canvas.addEventListener("mouseleave", clearHoverPointer);
+
       Events.on(engine, "beforeUpdate", () => {
         const timestamp = engine.timing.timestamp;
 
@@ -1964,7 +1997,10 @@ export default function MarbleRace({
           engine.world,
         ) as ObstacleBody[]) {
           if (body.plugin?.rotateSpeed) {
-            Body.setAngle(body, body.angle + body.plugin.rotateSpeed);
+            Body.setAngle(
+              body,
+              body.angle + body.plugin.rotateSpeed * playbackSpeedRef.current,
+            );
           }
 
           if (
@@ -2027,7 +2063,7 @@ export default function MarbleRace({
             body.plugin.uBoatSpeed !== undefined
           ) {
             const direction = body.plugin.uBoatDirection;
-            const speed = body.plugin.uBoatSpeed;
+            const speed = body.plugin.uBoatSpeed * playbackSpeedRef.current;
             const padding = body.plugin.uBoatWrapPadding || 90;
 
             Body.setPosition(body, {
@@ -2061,7 +2097,9 @@ export default function MarbleRace({
             body.plugin.wrapMaxY !== undefined &&
             body.plugin.wrapSpeed !== undefined
           ) {
-            let nextY = body.position.y - body.plugin.wrapSpeed;
+            let nextY =
+              body.position.y -
+              body.plugin.wrapSpeed * playbackSpeedRef.current;
             if (nextY < body.plugin.wrapMinY) nextY = body.plugin.wrapMaxY;
             Body.setPosition(body, { x: body.position.x, y: nextY });
           }
@@ -2109,7 +2147,8 @@ export default function MarbleRace({
             const launchTime = body.plugin.glueNextLaunch || 0;
             const active = roundStartedRef.current && timestamp >= launchTime;
             const direction = body.plugin.glueDirection;
-            const speed = body.plugin.glueSpeed;
+            const speed =
+              body.plugin.glueSpeed * playbackSpeedRef.current;
             const length = body.plugin.glueLength || 165;
 
             body.render.visible = active;
@@ -2171,6 +2210,29 @@ export default function MarbleRace({
           }
         }
 
+        // High playback speeds can occasionally push a marble beyond a wall
+        // between collision checks. Any marble outside the visible map is
+        // immediately returned to the spawn chamber.
+        if (roundStartedRef.current && !roundResolvingRef.current) {
+          const activeMetas = [...marblesRef.current.values()].filter(
+            (item) => !qualifiedRef.current.has(item.contestant.id),
+          );
+
+          activeMetas.forEach((meta, index) => {
+            const { x, y } = meta.body.position;
+            const outsideMap =
+              x < -MARBLE_RADIUS ||
+              x > WIDTH + MARBLE_RADIUS ||
+              y < -MARBLE_RADIUS ||
+              y > HEIGHT + MARBLE_RADIUS;
+
+            if (outsideMap) {
+              gluedMarblesRef.current.delete(meta.body.id);
+              resetMarble(meta, index);
+            }
+          });
+        }
+
         // Glued marbles inherit the exact position of their moving glue bar.
         const bodiesById = new Map(
           Composite.allBodies(engine.world).map((body) => [body.id, body]),
@@ -2196,7 +2258,9 @@ export default function MarbleRace({
 
           const gluePlatform = platform as ObstacleBody;
           const glueDirection = gluePlatform.plugin?.glueDirection || 0;
-          const glueSpeed = gluePlatform.plugin?.glueSpeed || 0;
+          const glueSpeed =
+            (gluePlatform.plugin?.glueSpeed || 0) *
+            playbackSpeedRef.current;
 
           Body.setVelocity(meta.body, {
             x: glueDirection * glueSpeed,
@@ -2352,8 +2416,9 @@ export default function MarbleRace({
 
       Events.on(render, "afterRender", () => {
         const context = render.context;
-        const pointer = mouse.position;
+        const pointer = hoverPointerRef.current;
         let hovered: MarbleMeta | null = null;
+        let hoveredDistanceSquared = Number.POSITIVE_INFINITY;
 
         for (const meta of marblesRef.current.values()) {
           if (qualifiedRef.current.has(meta.contestant.id)) continue;
@@ -2404,11 +2469,15 @@ export default function MarbleRace({
 
           const deltaX = pointer.x - x;
           const deltaY = pointer.y - y;
+          const distanceSquared =
+            deltaX * deltaX + deltaY * deltaY;
+
           if (
-            deltaX * deltaX + deltaY * deltaY <=
-            MARBLE_RADIUS * MARBLE_RADIUS
+            distanceSquared <= MARBLE_RADIUS * MARBLE_RADIUS &&
+            distanceSquared < hoveredDistanceSquared
           ) {
             hovered = meta;
+            hoveredDistanceSquared = distanceSquared;
           }
         }
 
@@ -2556,6 +2625,14 @@ export default function MarbleRace({
 
     if (engineRef.current) {
       engineRef.current.timing.timeScale = speed;
+
+      // Extra solver passes reduce tunneling through thin walls at 2x and 4x.
+      engineRef.current.positionIterations =
+        speed >= 4 ? 28 : speed >= 2 ? 18 : 10;
+      engineRef.current.velocityIterations =
+        speed >= 4 ? 22 : speed >= 2 ? 14 : 8;
+      engineRef.current.constraintIterations =
+        speed >= 4 ? 8 : speed >= 2 ? 6 : 4;
     }
   }, []);
 
