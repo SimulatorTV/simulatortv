@@ -46,7 +46,9 @@ type LevelId =
   | "glue-trap"
   | "wheel"
   | "u-boat"
-  | "goalie";
+  | "goalie"
+  | "switchback-sprint"
+  | "pinball-pass";
 
 type LevelDefinition = {
   id: LevelId;
@@ -1252,6 +1254,182 @@ function buildGoalie() {
   return bodies;
 }
 
+
+function buildSwitchbackSprint() {
+  const bodies = makeBaseStage();
+
+  const trackColor = {
+    fillStyle: "#0ea5e9",
+    strokeStyle: "#0c4a6e",
+    lineWidth: 3,
+  };
+  const bumperColor = {
+    fillStyle: "#f59e0b",
+    strokeStyle: "#78350f",
+    lineWidth: 3,
+  };
+
+  // Alternating full-width switchbacks create a continuous downhill race.
+  // Each row leaves a generous opening on the opposite side.
+  bodies.push(
+    makeWall(375, 300, 700, 22, {
+      angle: 0.055,
+      render: trackColor,
+    }),
+    makeWall(725, 405, 700, 22, {
+      angle: -0.055,
+      render: trackColor,
+    }),
+    makeWall(375, 510, 700, 22, {
+      angle: 0.055,
+      render: trackColor,
+    }),
+    makeWall(725, 615, 700, 22, {
+      angle: -0.055,
+      render: trackColor,
+    }),
+  );
+
+  // Rounded bumpers near each turn spread the pack without blocking the route.
+  [
+    { x: 825, y: 345 },
+    { x: 275, y: 450 },
+    { x: 825, y: 555 },
+    { x: 275, y: 660 },
+  ].forEach(({ x, y }) => {
+    const bumper = Bodies.circle(x, y, 24, {
+      isStatic: true,
+      friction: 0,
+      frictionStatic: 0,
+      restitution: 1.08,
+      collisionFilter: {
+        category: CATEGORY_STAGE,
+        mask: CATEGORY_MARBLE,
+      },
+      render: bumperColor,
+    }) as ObstacleBody;
+    bumper.plugin = { kind: "stage" };
+    bodies.push(bumper);
+  });
+
+  // Reset sweepers cross the open turn zones. Their phases ensure that the
+  // route is never completely sealed at the same time.
+  bodies.push(
+    makeMovingCircleReset(910, 345, 23, "x", 115, 0.0025, 0),
+    makeMovingCircleReset(190, 450, 23, "x", 115, 0.0025, Math.PI),
+    makeMovingCircleReset(910, 555, 23, "x", 115, 0.0028, Math.PI / 2),
+    makeMovingCircleReset(190, 660, 23, "x", 115, 0.0028, Math.PI * 1.5),
+  );
+
+  // A wide final funnel rewards speed while keeping the entire route playable.
+  bodies.push(
+    makeWall(245, 718, 330, 20, {
+      angle: 0.14,
+      render: trackColor,
+    }),
+    makeWall(855, 718, 330, 20, {
+      angle: -0.14,
+      render: trackColor,
+    }),
+    makeRedReset(205, FLOOR_Y - 9, 330, 38),
+    makeGreenFinish(550, FLOOR_Y - 9, 310, 38),
+    makeRedReset(895, FLOOR_Y - 9, 330, 38),
+  );
+
+  return bodies;
+}
+
+function buildPinballPass() {
+  const bodies = makeBaseStage();
+
+  const railColor = {
+    fillStyle: "#8b5cf6",
+    strokeStyle: "#312e81",
+    lineWidth: 3,
+  };
+
+  // The top funnels marbles into a fast pinball-style center channel.
+  bodies.push(
+    makeWall(250, 310, 430, 22, {
+      angle: 0.17,
+      render: railColor,
+    }),
+    makeWall(850, 310, 430, 22, {
+      angle: -0.17,
+      render: railColor,
+    }),
+  );
+
+  // Three separated spinner stations accelerate and reshuffle the field.
+  const spinnerData = [
+    { x: 550, y: 370, length: 180, speed: 0.12, angle: 0 },
+    { x: 360, y: 505, length: 150, speed: -0.14, angle: Math.PI / 4 },
+    { x: 740, y: 505, length: 150, speed: 0.14, angle: -Math.PI / 4 },
+  ];
+
+  spinnerData.forEach(({ x, y, length, speed, angle }) => {
+    const spinner = makeSpinner(x, y, length, speed, "#f472b6");
+    spinner.render.strokeStyle = "#831843";
+    Body.setAngle(spinner, angle);
+    bodies.push(spinner);
+  });
+
+  // Peg banks create many race lines while leaving marble-wide clearances.
+  const pegRows = [
+    { y: 430, xs: [170, 280, 820, 930] },
+    { y: 575, xs: [150, 260, 550, 840, 950] },
+    { y: 665, xs: [250, 410, 690, 850] },
+  ];
+
+  pegRows.forEach(({ y, xs }) => {
+    xs.forEach((x) => bodies.push(makePeg(x, y, 13)));
+  });
+
+  // Two red reset bars patrol the lower field but use opposite phases, so a
+  // safe racing path always remains somewhere on screen.
+  const lowerResetLeft = makeRedReset(360, 625, 150, 24);
+  lowerResetLeft.plugin = {
+    kind: "red-reset",
+    moveAxis: "x",
+    moveOriginX: 360,
+    moveOriginY: 625,
+    moveAmplitude: 210,
+    moveSpeed: 0.0023,
+    movePhase: 0,
+  };
+
+  const lowerResetRight = makeRedReset(740, 700, 150, 24);
+  lowerResetRight.plugin = {
+    kind: "red-reset",
+    moveAxis: "x",
+    moveOriginX: 740,
+    moveOriginY: 700,
+    moveAmplitude: 210,
+    moveSpeed: 0.0023,
+    movePhase: Math.PI,
+  };
+
+  bodies.push(lowerResetLeft, lowerResetRight);
+
+  // Side guides prevent dead corners and feed every survivor to the finish.
+  bodies.push(
+    makeWall(185, 735, 320, 20, {
+      angle: 0.18,
+      render: railColor,
+    }),
+    makeWall(915, 735, 320, 20, {
+      angle: -0.18,
+      render: railColor,
+    }),
+    makeRedReset(120, FLOOR_Y - 9, 170, 38),
+    makeGreenFinish(550, FLOOR_Y - 9, 650, 38),
+    makeRedReset(980, FLOOR_Y - 9, 170, 38),
+  );
+
+  return bodies;
+}
+
+
 function buildWheel() {
   const bodies = makeBaseStage();
 
@@ -1504,6 +1682,20 @@ const LEVELS: LevelDefinition[] = [
     description:
       "A left-side funnel feeds a powerful launcher toward a goal guarded by a vertically moving goalie.",
     build: buildGoalie,
+  },
+  {
+    id: "switchback-sprint",
+    name: "Switchback Sprint",
+    description:
+      "Race down alternating switchbacks, dodge moving reset sweepers, and hit the center finish lane.",
+    build: buildSwitchbackSprint,
+  },
+  {
+    id: "pinball-pass",
+    name: "Pinball Pass",
+    description:
+      "Spinners, pegs, and moving reset bars turn the descent into a fast pinball race.",
+    build: buildPinballPass,
   },
   {
     id: "wheel",
