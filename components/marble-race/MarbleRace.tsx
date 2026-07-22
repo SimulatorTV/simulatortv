@@ -95,6 +95,12 @@ type ObstacleBody = Matter.Body & {
     uBoatSpeed?: number;
     uBoatWrapPadding?: number;
     uBoatWrapDistance?: number;
+    fishLift?: boolean;
+    fishBottomY?: number;
+    fishTopY?: number;
+    fishPhaseMs?: number;
+    fishMoveMs?: number;
+    fishCycleMs?: number;
   };
 };
 
@@ -1611,23 +1617,96 @@ function buildWheel() {
 
 function buildFishBowl() {
   const bodies = makeBaseStage();
-  const makeArc=(centerX:number)=>{
-    const r=250,segs=22;
-    for(let i=0;i<segs;i++){
-      const a0=Math.PI-(i/segs)*Math.PI;
-      const a1=Math.PI-((i+1)/segs)*Math.PI;
-      const x0=centerX+Math.cos(a0)*r,y0=(FLOOR_Y-6)+Math.sin(a0)*r;
-      const x1=centerX+Math.cos(a1)*r,y1=(FLOOR_Y-6)+Math.sin(a1)*r;
-      bodies.push(makeWall((x0+x1)/2,(y0+y1)/2,Math.hypot(x1-x0,y1-y0)+4,18,{angle:Math.atan2(y1-y0,x1-x0)}));
-    }
+
+  const bowlColor = {
+    fillStyle: "#60a5fa",
+    strokeStyle: "#1e3a8a",
+    lineWidth: 3,
   };
-  makeArc(WIDTH*0.25); makeArc(WIDTH*0.75);
-  bodies.push(makeGreenFinish(WIDTH/2,FLOOR_Y-9,90,26));
-  [180,365,550,735,920].forEach((x,i)=>{
-    const p=makeWall(x,FLOOR_Y-140,130,18,{});
-    p.plugin={kind:"stage",moveAxis:"y",moveOriginX:x,moveOriginY:FLOOR_Y-140,moveAmplitude:220,moveSpeed:Math.PI/3000,movePhase:i*0.7};
-    bodies.push(p);
+  const platformColor = {
+    fillStyle: "#94a3b8",
+    strokeStyle: "#334155",
+    lineWidth: 3,
+  };
+
+  // One giant open U-shaped fish bowl that remains completely inside the map.
+  // The center is flattened so the tiny green finish has a true horizontal bed.
+  const bowlCenterX = WIDTH / 2;
+  const bowlRadiusX = 505;
+  const bowlRadiusY = 235;
+  const bowlSideY = 500;
+  const bowlSegments = 42;
+  const centerFlatHalfWidth = 48;
+
+  for (let index = 0; index < bowlSegments; index += 1) {
+    const t0 = index / bowlSegments;
+    const t1 = (index + 1) / bowlSegments;
+    const angle0 = Math.PI - t0 * Math.PI;
+    const angle1 = Math.PI - t1 * Math.PI;
+
+    let x0 = bowlCenterX + Math.cos(angle0) * bowlRadiusX;
+    let y0 = bowlSideY + Math.sin(angle0) * bowlRadiusY;
+    let x1 = bowlCenterX + Math.cos(angle1) * bowlRadiusX;
+    let y1 = bowlSideY + Math.sin(angle1) * bowlRadiusY;
+
+    // Leave a short opening at the exact bottom center for a flat finish bed.
+    if (
+      Math.abs(x0 - bowlCenterX) < centerFlatHalfWidth ||
+      Math.abs(x1 - bowlCenterX) < centerFlatHalfWidth
+    ) {
+      continue;
+    }
+
+    bodies.push(
+      makeWall(
+        (x0 + x1) / 2,
+        (y0 + y1) / 2,
+        Math.hypot(x1 - x0, y1 - y0) + 5,
+        18,
+        {
+          angle: Math.atan2(y1 - y0, x1 - x0),
+          render: bowlColor,
+        },
+      ),
+    );
+  }
+
+  const finishY = bowlSideY + bowlRadiusY;
+  const finishWidth = 92;
+
+  // Small flat center finish at the lowest point of the bowl.
+  bodies.push(
+    makeWall(bowlCenterX, finishY + 10, finishWidth + 18, 18, {
+      render: bowlColor,
+    }),
+    makeGreenFinish(bowlCenterX, finishY - 2, finishWidth, 24),
+  );
+
+  // Five equally spaced platforms. Platform 3 exactly covers the green goal
+  // while all platforms are resting at the bottom.
+  const platformXs = [150, 350, 550, 750, 950];
+  const bottomY = finishY - 24;
+  const topY = 360;
+  const phaseByIndex = [0, 1000, 2000, 1000, 0];
+
+  platformXs.forEach((x, index) => {
+    const platform = makeWall(x, bottomY, finishWidth, 18, {
+      render: platformColor,
+    });
+
+    platform.plugin = {
+      kind: "stage",
+      fishLift: true,
+      fishBottomY: bottomY,
+      fishTopY: topY,
+      fishPhaseMs: phaseByIndex[index],
+      fishMoveMs: 1000,
+      fishCycleMs: 3000,
+    };
+
+    bodies.push(platform);
   });
+
   return bodies;
 }
 
@@ -1725,8 +1804,9 @@ const LEVELS: LevelDefinition[] = [
   {
     id:"fish-bowl",
     name:"Fish Bowl",
-    description:"Figure-8 bowl with rising platforms.",
-    build:buildFishBowl,
+    description:
+      "A giant open bowl with synchronized rising platforms and a tiny center finish.",
+    build: buildFishBowl,
   },
   {
     id: "wheel",
@@ -1781,6 +1861,7 @@ export default function MarbleRace({
   const eliminatedRef = useRef<MarbleContestant[]>([]);
   const qualifiedRef = useRef<Set<string>>(new Set());
   const roundStartedRef = useRef(false);
+  const roundStartTimestampRef = useRef(0);
   const roundResolvingRef = useRef(false);
   const mountedRef = useRef(true);
   const levelQueueRef = useRef<LevelDefinition[]>([]);
@@ -1921,6 +2002,7 @@ export default function MarbleRace({
       setEliminationNotice(null);
       qualifiedRef.current.clear();
       roundStartedRef.current = false;
+      roundStartTimestampRef.current = 0;
       roundResolvingRef.current = false;
 
       const engine = Engine.create({
@@ -2061,6 +2143,51 @@ export default function MarbleRace({
               body,
               body.plugin.wheelBaseAngle + rotation,
             );
+          }
+
+          if (
+            body.plugin?.fishLift &&
+            body.plugin.fishBottomY !== undefined &&
+            body.plugin.fishTopY !== undefined &&
+            body.plugin.fishMoveMs !== undefined &&
+            body.plugin.fishCycleMs !== undefined
+          ) {
+            const bottomY = body.plugin.fishBottomY;
+            const topY = body.plugin.fishTopY;
+            const phase = body.plugin.fishPhaseMs || 0;
+
+            if (!roundStartedRef.current) {
+              Body.setPosition(body, {
+                x: body.position.x,
+                y: bottomY,
+              });
+            } else {
+              const elapsed = Math.max(
+                0,
+                timestamp - roundStartTimestampRef.current,
+              );
+
+              let nextY = bottomY;
+
+              if (elapsed >= phase) {
+                const cycleTime =
+                  (elapsed - phase) % body.plugin.fishCycleMs;
+
+                if (cycleTime < body.plugin.fishMoveMs) {
+                  const progress =
+                    cycleTime / body.plugin.fishMoveMs;
+                  nextY =
+                    bottomY + (topY - bottomY) * progress;
+                } else {
+                  nextY = topY;
+                }
+              }
+
+              Body.setPosition(body, {
+                x: body.position.x,
+                y: nextY,
+              });
+            }
           }
 
           if (
@@ -2634,6 +2761,8 @@ export default function MarbleRace({
   const startRound = useCallback(() => {
     if (!engineRef.current || started || winner || !seasonStarted) return;
     roundStartedRef.current = true;
+    roundStartTimestampRef.current =
+      engineRef.current.timing.timestamp;
     setStarted(true);
     setAnnouncement(null);
 
