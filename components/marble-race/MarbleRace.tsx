@@ -48,7 +48,8 @@ type LevelId =
   | "u-boat"
   | "goalie"
   | "switchback-sprint"
-  | "pinball-pass";
+  | "pinball-pass"
+  | "fish-bowl";
 
 type LevelDefinition = {
   id: LevelId;
@@ -1607,6 +1608,29 @@ function buildWheel() {
 }
 
 
+
+function buildFishBowl() {
+  const bodies = makeBaseStage();
+  const makeArc=(centerX:number)=>{
+    const r=250,segs=22;
+    for(let i=0;i<segs;i++){
+      const a0=Math.PI-(i/segs)*Math.PI;
+      const a1=Math.PI-((i+1)/segs)*Math.PI;
+      const x0=centerX+Math.cos(a0)*r,y0=(FLOOR_Y-6)+Math.sin(a0)*r;
+      const x1=centerX+Math.cos(a1)*r,y1=(FLOOR_Y-6)+Math.sin(a1)*r;
+      bodies.push(makeWall((x0+x1)/2,(y0+y1)/2,Math.hypot(x1-x0,y1-y0)+4,18,{angle:Math.atan2(y1-y0,x1-x0)}));
+    }
+  };
+  makeArc(WIDTH*0.25); makeArc(WIDTH*0.75);
+  bodies.push(makeGreenFinish(WIDTH/2,FLOOR_Y-9,90,26));
+  [180,365,550,735,920].forEach((x,i)=>{
+    const p=makeWall(x,FLOOR_Y-140,130,18,{});
+    p.plugin={kind:"stage",moveAxis:"y",moveOriginX:x,moveOriginY:FLOOR_Y-140,moveAmplitude:220,moveSpeed:Math.PI/3000,movePhase:i*0.7};
+    bodies.push(p);
+  });
+  return bodies;
+}
+
 const LEVELS: LevelDefinition[] = [
   {
     id: "paddle-bowl",
@@ -1696,6 +1720,13 @@ const LEVELS: LevelDefinition[] = [
     description:
       "Spinners, pegs, and moving reset bars turn the descent into a fast pinball race.",
     build: buildPinballPass,
+  },
+
+  {
+    id:"fish-bowl",
+    name:"Fish Bowl",
+    description:"Figure-8 bowl with rising platforms.",
+    build:buildFishBowl,
   },
   {
     id: "wheel",
