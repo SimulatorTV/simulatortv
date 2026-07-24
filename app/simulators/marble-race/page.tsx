@@ -24,6 +24,41 @@ type ContestantRecord = {
   cast_id?: string;
 };
 
+const COLOR_BALLS = [
+  { name: "Salmon", hex: "#FA8072" },
+  { name: "Red", hex: "#EF4444" },
+  { name: "Orange", hex: "#F97316" },
+  { name: "Yellow", hex: "#FDE047" },
+  { name: "Gold", hex: "#D4AF37" },
+  { name: "Lime", hex: "#84CC16" },
+  { name: "Green", hex: "#22C55E" },
+  { name: "Dark Green", hex: "#166534" },
+  { name: "Cyan", hex: "#22D3EE" },
+  { name: "Blue", hex: "#3B82F6" },
+  { name: "Navy", hex: "#172554" },
+  { name: "Lavender", hex: "#C4B5FD" },
+  { name: "Purple", hex: "#8B5CF6" },
+  { name: "Pink", hex: "#F472B6" },
+  { name: "Magenta", hex: "#D946EF" },
+  { name: "Tan", hex: "#D2B48C" },
+  { name: "Brown", hex: "#92400E" },
+  { name: "Silver", hex: "#C0C0C0" },
+  { name: "Gray", hex: "#6B7280" },
+  { name: "White", hex: "#FFFFFF" },
+  { name: "Black", hex: "#111111" },
+  { name: "Rainbow", hex: "rainbow" },
+] as const;
+
+function colorBallId(name: string) {
+  return `color-ball-${name.toLowerCase().replace(/\s+/g, "-")}`;
+}
+
+function colorBallBackground(person: any) {
+  return person.rainbow
+    ? "conic-gradient(#ef4444, #f97316, #fde047, #22c55e, #22d3ee, #3b82f6, #a855f7, #ef4444)"
+    : person.marbleColor || "#dbeafe";
+}
+
 function AddCastMembersModal({
   casts,
   castId,
@@ -140,12 +175,72 @@ function AddCastMembersModal({
   );
 }
 
+function AddColorBallsModal({
+  selectedNames,
+  onToggle,
+  onSelectAll,
+  onSelectNone,
+  onAdd,
+  onClose,
+}: any) {
+  return (
+    <div className="mrModalBackdrop">
+      <div className="mrColorModal">
+        <div className="mrModalHeader">
+          <div>
+            <h2>Add Color Marbles</h2>
+            <p>Each selected color becomes its own contestant.</p>
+          </div>
+          <button type="button" onClick={onClose}>Close</button>
+        </div>
+
+        <div className="mrColorModalBody">
+          <div className="mrModalActions">
+            <b>{selectedNames.size} selected</b>
+            <button type="button" onClick={onSelectAll}>Select All</button>
+            <button type="button" onClick={onSelectNone}>Select None</button>
+            <button type="button" onClick={onAdd} disabled={!selectedNames.size}>
+              Add Selected
+            </button>
+          </div>
+
+          <div className="mrColorGrid">
+            {COLOR_BALLS.map((color) => {
+              const selected = selectedNames.has(color.name);
+              const background =
+                color.hex === "rainbow"
+                  ? "conic-gradient(#ef4444, #f97316, #fde047, #22c55e, #22d3ee, #3b82f6, #a855f7, #ef4444)"
+                  : color.hex;
+
+              return (
+                <button
+                  key={color.name}
+                  type="button"
+                  className={selected ? "mrColorChoice active" : "mrColorChoice"}
+                  onClick={() => onToggle(color.name)}
+                >
+                  <span className="mrColorBall" style={{ background }} />
+                  <b>{color.name}</b>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function MarbleRacePage() {
   const router = useRouter();
 
   const [availableCasts, setAvailableCasts] = useState<CastRecord[]>([]);
   const [loadingCasts, setLoadingCasts] = useState(true);
   const [showAddCastModal, setShowAddCastModal] = useState(false);
+  const [showColorBallsModal, setShowColorBallsModal] = useState(false);
+  const [modalSelectedColorNames, setModalSelectedColorNames] = useState<Set<string>>(
+    () => new Set(),
+  );
   const [modalCastId, setModalCastId] = useState("");
   const [modalContestants, setModalContestants] = useState<ContestantRecord[]>([]);
   const [modalSelectedIds, setModalSelectedIds] = useState<Set<string>>(() => new Set());
@@ -311,6 +406,36 @@ export default function MarbleRacePage() {
     setModalSelectedIds(new Set());
   }
 
+  function addSelectedColorBallsToRoster() {
+    const additions = COLOR_BALLS.filter((color) =>
+      modalSelectedColorNames.has(color.name),
+    ).map((color) => ({
+      id: colorBallId(color.name),
+      sourceId: colorBallId(color.name),
+      name: color.name,
+      imageUrl: "",
+      marbleColor: color.hex === "rainbow" ? undefined : color.hex,
+      rainbow: color.hex === "rainbow",
+      isColorBall: true,
+    }));
+
+    setRoster((current) => {
+      const existing = new Set(current.map((person) => person.id));
+      const fresh = additions.filter((person) => !existing.has(person.id));
+
+      setSelectedIds((currentSelected) => {
+        const next = new Set(currentSelected);
+        additions.forEach((person) => next.add(person.id));
+        return next;
+      });
+
+      return [...current, ...fresh];
+    });
+
+    setShowColorBallsModal(false);
+    setModalSelectedColorNames(new Set());
+  }
+
   function removeRosterPlayer(id: string) {
     setRoster((current) => current.filter((person) => person.id !== id));
     setSelectedIds((current) => {
@@ -330,7 +455,7 @@ export default function MarbleRacePage() {
 
   function startRace() {
     if (selectedRoster.length < 2) {
-      alert("Select at least 2 cast members.");
+      alert("Select at least 2 marbles.");
       return;
     }
 
@@ -339,6 +464,8 @@ export default function MarbleRacePage() {
         id: person.id,
         name: person.name,
         imageUrl: person.imageUrl,
+        marbleColor: person.marbleColor,
+        rainbow: person.rainbow,
       }))
     );
     setRaceKey((value) => value + 1);
@@ -351,6 +478,27 @@ export default function MarbleRacePage() {
   return (
     <main className="min-h-screen bg-black text-white">
       <Navbar />
+
+      {showColorBallsModal && (
+        <AddColorBallsModal
+          selectedNames={modalSelectedColorNames}
+          onClose={() => setShowColorBallsModal(false)}
+          onToggle={(name: string) =>
+            setModalSelectedColorNames((current) => {
+              const next = new Set(current);
+              next.has(name) ? next.delete(name) : next.add(name);
+              return next;
+            })
+          }
+          onSelectAll={() =>
+            setModalSelectedColorNames(
+              new Set(COLOR_BALLS.map((color) => color.name)),
+            )
+          }
+          onSelectNone={() => setModalSelectedColorNames(new Set())}
+          onAdd={addSelectedColorBallsToRoster}
+        />
+      )}
 
       {showAddCastModal && (
         <AddCastMembersModal
@@ -484,6 +632,65 @@ export default function MarbleRacePage() {
           padding:14px;
           background:rgba(0,0,0,.86);
         }
+        .mrColorModal {
+          width:min(920px,100%);
+          max-height:90vh;
+          display:flex;
+          flex-direction:column;
+          overflow:hidden;
+          border:1px solid #3f3f46;
+          border-radius:20px;
+          background:#09090b;
+        }
+        .mrColorModalBody {
+          min-height:0;
+          overflow-y:auto;
+          padding:16px;
+        }
+        .mrColorGrid {
+          display:grid;
+          grid-template-columns:repeat(auto-fill,minmax(140px,1fr));
+          gap:10px;
+        }
+        .mrColorChoice {
+          display:flex;
+          align-items:center;
+          gap:10px;
+          padding:11px;
+          border:3px solid #3f3f46;
+          border-radius:13px;
+          background:#18181b;
+          color:white;
+          cursor:pointer;
+          opacity:.45;
+        }
+        .mrColorChoice.active {
+          border-color:#f59e0b;
+          background:#3f2b08;
+          opacity:1;
+        }
+        .mrColorBall,.mrRosterColorBall {
+          display:block;
+          border:3px solid #111827;
+          border-radius:999px;
+        }
+        .mrColorBall {
+          width:42px;
+          height:42px;
+          flex:0 0 42px;
+        }
+        .mrRosterColorWrap {
+          display:grid;
+          place-items:center;
+          width:100%;
+          aspect-ratio:1;
+          background:#e5e7eb;
+        }
+        .mrRosterColorBall {
+          width:72%;
+          aspect-ratio:1;
+          box-shadow:inset -10px -12px 18px rgba(0,0,0,.22);
+        }
         .mrModal {
           width:min(1100px,100%);
           height:90vh;
@@ -599,6 +806,15 @@ export default function MarbleRacePage() {
               </button>
               <button
                 type="button"
+                onClick={() => {
+                  setModalSelectedColorNames(new Set());
+                  setShowColorBallsModal(true);
+                }}
+              >
+                Add Color Marbles
+              </button>
+              <button
+                type="button"
                 onClick={() => setSelectedIds(new Set(roster.map((person) => person.id)))}
               >
                 Select All
@@ -611,7 +827,7 @@ export default function MarbleRacePage() {
           </div>
 
           {roster.length === 0 ? (
-            <div className="mrEmpty">No cast members added yet.</div>
+            <div className="mrEmpty">No cast members or color marbles added yet.</div>
           ) : (
             <div className="mrRoster">
               {roster.map((person) => (
@@ -630,7 +846,17 @@ export default function MarbleRacePage() {
                   >
                     ×
                   </button>
-                  <img src={person.imageUrl} alt={person.name} />
+                  {person.imageUrl ? (
+                    <img src={person.imageUrl} alt={person.name} />
+                  ) : (
+                    <div className="mrRosterColorWrap">
+                      <span
+                        className="mrRosterColorBall"
+                        style={{ background: colorBallBackground(person) }}
+                        aria-label={`${person.name} marble`}
+                      />
+                    </div>
+                  )}
                   <span>{person.name}</span>
                 </div>
               ))}

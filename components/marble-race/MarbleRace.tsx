@@ -22,41 +22,6 @@ export type MarbleContestant = {
   rainbow?: boolean;
 };
 
-const COLOR_BALLS = [
-  { name: "Salmon", hex: "#FA8072" },
-  { name: "Red", hex: "#EF4444" },
-  { name: "Orange", hex: "#F97316" },
-  { name: "Yellow", hex: "#FDE047" },
-  { name: "Gold", hex: "#D4AF37" },
-  { name: "Lime", hex: "#84CC16" },
-  { name: "Green", hex: "#22C55E" },
-  { name: "Dark Green", hex: "#166534" },
-  { name: "Cyan", hex: "#22D3EE" },
-  { name: "Blue", hex: "#3B82F6" },
-  { name: "Navy", hex: "#172554" },
-  { name: "Lavender", hex: "#C4B5FD" },
-  { name: "Purple", hex: "#8B5CF6" },
-  { name: "Pink", hex: "#F472B6" },
-  { name: "Magenta", hex: "#D946EF" },
-  { name: "Tan", hex: "#D2B48C" },
-  { name: "Brown", hex: "#92400E" },
-  { name: "Silver", hex: "#C0C0C0" },
-  { name: "Gray", hex: "#6B7280" },
-  { name: "White", hex: "#FFFFFF" },
-  { name: "Black", hex: "#111111" },
-  { name: "Rainbow", hex: "rainbow" },
-] as const;
-
-function makeColorContestant(name: string, hex: string): MarbleContestant {
-  return {
-    id: `color-ball-${name.toLowerCase().replace(/\s+/g, "-")}`,
-    name,
-    imageUrl: "",
-    marbleColor: hex === "rainbow" ? undefined : hex,
-    rainbow: hex === "rainbow",
-  };
-}
-
 type MarbleRaceProps = {
   contestants: MarbleContestant[];
   onSeasonFinished?: (
@@ -1704,44 +1669,59 @@ function buildSpikes() {
     }),
   );
 
-  // The entire bottom is a green qualification floor.
+  // The full floor is green. When the spikes are lowered, marbles can pass
+  // through the wide spaces between the narrow tips and qualify.
   bodies.push(makeFullFloorZone("green-finish"));
 
-  const downTipY = FLOOR_Y - 28;
+  const floorTopY = FLOOR_Y - 28;
   const peakTipY = Math.floor(HEIGHT / 3);
-  const spikeHeight = 154;
-  const spikeWidth = 46;
+  const spikeHeight = 360;
+  const spikeWidth = 22;
   const safeGap = MARBLE_RADIUS * 3; // 1.5 marble diameters
   const pitch = spikeWidth + safeGap;
-  const firstX = 70;
+  const firstX = 58;
   const spikeCount = Math.floor((WIDTH - firstX * 2) / pitch) + 1;
 
-  // One connected red base remains below the green floor while down, then
-  // rises with every spike and completely covers the green at full height.
+  // At the lowered position, only the sharp tips poke slightly above the
+  // green floor. Most of the spike mechanism and its connected base hang
+  // below the visible map.
+  const loweredTipY = floorTopY - 10;
+  const loweredCenterY = loweredTipY + spikeHeight / 2;
+
+  // At full height, the tips reach the bottom of the top third of the map.
+  const raisedCenterY = peakTipY + spikeHeight / 2;
+  const travelDistance = loweredCenterY - raisedCenterY;
+
+  // One connected red base sits below all spikes. It is mostly off-screen
+  // while lowered, then rises high enough to completely cover the green goal.
+  const baseHeight = 100;
+  const loweredBaseY = loweredTipY + spikeHeight + baseHeight / 2 - 2;
+  const raisedBaseY = loweredBaseY - travelDistance;
+
   const connectedBase = makeRedReset(
     WIDTH / 2,
-    downTipY + spikeHeight / 2 + 38,
+    loweredBaseY,
     WIDTH - 72,
-    76,
+    baseHeight,
   );
   connectedBase.plugin = {
     kind: "red-reset",
     spikeRise: true,
-    spikeBottomY: connectedBase.position.y,
-    spikeTopY:
-      connectedBase.position.y - (downTipY - peakTipY),
-    spikeCycleMs: 1000,
+    spikeBottomY: loweredBaseY,
+    spikeTopY: raisedBaseY,
+    spikeCycleMs: 3000,
   };
   bodies.push(connectedBase);
 
   for (let index = 0; index < spikeCount; index += 1) {
     const x = firstX + index * pitch;
-    const triangleCenterY = downTipY + spikeHeight / 3;
 
-    const spike = Bodies.polygon(x, triangleCenterY, 3, spikeHeight / 1.72, {
+    // A 3-sided polygon with this orientation has one sharp point facing up.
+    // The narrow width and long height keep the obstacle visibly spike-like.
+    const spike = Bodies.polygon(x, loweredCenterY, 3, spikeHeight / 1.72, {
       isStatic: true,
       isSensor: true,
-      angle: -Math.PI / 2,
+      angle: Math.PI / 2,
       collisionFilter: {
         category: CATEGORY_SENSOR,
         mask: CATEGORY_MARBLE,
@@ -1749,12 +1729,15 @@ function buildSpikes() {
       render: spikeColor,
     }) as ObstacleBody;
 
+    // Compress the equilateral triangle horizontally into a long, narrow spike.
+    Body.scale(spike, spikeWidth / spikeHeight, 1);
+
     spike.plugin = {
       kind: "red-reset",
       spikeRise: true,
-      spikeBottomY: triangleCenterY,
-      spikeTopY: triangleCenterY - (downTipY - peakTipY),
-      spikeCycleMs: 1000,
+      spikeBottomY: loweredCenterY,
+      spikeTopY: raisedCenterY,
+      spikeCycleMs: 3000,
     };
     bodies.push(spike);
   }
@@ -2043,9 +2026,6 @@ export default function MarbleRace({
   const [playbackSpeed, setPlaybackSpeed] = useState<PlaybackSpeed>(1);
   const [eliminationInput, setEliminationInput] = useState("1");
   const [lockedEliminationCount, setLockedEliminationCount] = useState(1);
-  const [selectedColorNames, setSelectedColorNames] = useState<Set<string>>(
-    () => new Set(),
-  );
   const [qualifiedCount, setQualifiedCount] = useState(0);
   const [qualifiedThisRound, setQualifiedThisRound] = useState<
     MarbleContestant[]
@@ -2995,15 +2975,12 @@ export default function MarbleRace({
       return;
     }
 
-    const colorContestants = COLOR_BALLS.filter((color) =>
-      selectedColorNames.has(color.name),
-    ).map((color) => makeColorContestant(color.name, color.hex));
-    const seasonContestants = [...contestants, ...colorContestants];
-
-    if (seasonContestants.length < 2) {
+    if (contestants.length < 2) {
       setAnnouncement("Add or select at least two marbles.");
       return;
     }
+
+    const seasonContestants = contestants;
 
     remainingRef.current = seasonContestants;
     eliminatedRef.current = [];
@@ -3021,11 +2998,7 @@ export default function MarbleRace({
     setEliminationNotice(null);
     setSeasonStarted(true);
     buildRound(seasonContestants, 1);
-  }, [
-    buildRound,
-    contestants,
-    selectedColorNames,
-  ]);
+  }, [buildRound, contestants]);
 
   const startRound = useCallback(() => {
     if (!engineRef.current || started || winner || !seasonStarted) return;
@@ -3391,8 +3364,8 @@ export default function MarbleRace({
           <h1>Marble Race</h1>
           <p>
             {!seasonStarted
-              ? `${contestants.length + selectedColorNames.size} marble${
-                  contestants.length + selectedColorNames.size === 1 ? "" : "s"
+              ? `${contestants.length} marble${
+                  contestants.length === 1 ? "" : "s"
                 } selected`
               : `Round ${round} · ${remaining.length} marble${
                   remaining.length === 1 ? "" : "s"
@@ -3542,124 +3515,6 @@ export default function MarbleRace({
           </button>
         </div>
       </div>
-
-      {!seasonStarted && (
-        <section
-          style={{
-            maxWidth: 1180,
-            margin: "0 auto 14px",
-            padding: 16,
-            border: "1px solid #334155",
-            borderRadius: 18,
-            background: "#111827",
-          }}
-        >
-          <h2 style={{ margin: 0 }}>Add Color Balls</h2>
-          <p style={{ margin: "6px 0 0", color: "#cbd5e1" }}>
-            Select any colors below. You can start with only color balls,
-            only cast members, or combine both.
-          </p>
-
-          <div
-            style={{
-              display: "flex",
-              gap: 8,
-              marginTop: 14,
-              flexWrap: "wrap",
-            }}
-          >
-            <button
-              type="button"
-              style={buttonStyle}
-              onClick={() =>
-                setSelectedColorNames(
-                  new Set(COLOR_BALLS.map((color) => color.name)),
-                )
-              }
-            >
-              Select All
-            </button>
-            <button
-              type="button"
-              style={buttonStyle}
-              onClick={() => setSelectedColorNames(new Set())}
-            >
-              Select None
-            </button>
-            <strong
-              style={{
-                display: "flex",
-                alignItems: "center",
-                marginLeft: 6,
-                color: "#ffffff",
-              }}
-            >
-              {selectedColorNames.size} selected
-            </strong>
-          </div>
-
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns:
-                "repeat(auto-fit, minmax(135px, 1fr))",
-              gap: 10,
-              marginTop: 14,
-            }}
-          >
-            {COLOR_BALLS.map((color) => {
-              const selected = selectedColorNames.has(color.name);
-              const rainbowBackground =
-                "conic-gradient(#ef4444, #f97316, #fde047, #22c55e, #22d3ee, #3b82f6, #a855f7, #ef4444)";
-
-              return (
-                <button
-                  key={color.name}
-                  type="button"
-                  onClick={() =>
-                    setSelectedColorNames((current) => {
-                      const next = new Set(current);
-                      if (next.has(color.name)) next.delete(color.name);
-                      else next.add(color.name);
-                      return next;
-                    })
-                  }
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 10,
-                    padding: 10,
-                    border: selected
-                      ? "3px solid #22c55e"
-                      : "3px solid #475569",
-                    borderRadius: 12,
-                    background: selected ? "#14532d" : "#1e293b",
-                    color: "#ffffff",
-                    fontWeight: 1000,
-                    cursor: "pointer",
-                    opacity: selected ? 1 : 0.5,
-                  }}
-                >
-                  <span
-                    style={{
-                      width: 34,
-                      height: 34,
-                      flex: "0 0 34px",
-                      border: "3px solid #111827",
-                      borderRadius: "999px",
-                      background:
-                        color.hex === "rainbow"
-                          ? rainbowBackground
-                          : color.hex,
-                    }}
-                  />
-                  {color.name}
-                </button>
-              );
-            })}
-          </div>
-        </section>
-      )}
 
       {!seasonStarted && (
         <section
@@ -3947,4 +3802,3 @@ export default function MarbleRace({
       </div>
     </div>
   );
-}
