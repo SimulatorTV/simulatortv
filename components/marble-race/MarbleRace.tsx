@@ -2886,32 +2886,32 @@ export default function MarbleRace({
 
       const loserIds = new Set(losers.map((loser) => loser.id));
 
-      // Remove the entire stage, including the floor, so every losing marble
-      // visibly drops out of the map together.
+      // Make the course disappear, but keep its physical floor so the losing
+      // marbles fall onto it and bounce during the elimination display.
+      // Their existing linear and angular momentum are deliberately untouched.
       for (const body of [
         ...Composite.allBodies(engine.world),
       ] as ObstacleBody[]) {
         const isLosingMarble =
           body.label.startsWith("marble:") &&
           loserIds.has(body.label.slice("marble:".length));
-        if (!isLosingMarble) Composite.remove(engine.world, body);
+        const isFloor = body.plugin?.kind === "floor";
+
+        if (!isLosingMarble && !isFloor) {
+          Composite.remove(engine.world, body);
+        }
       }
 
-      losers.forEach((loser, index) => {
+      losers.forEach((loser) => {
         const loserMeta = [...marblesRef.current.values()].find(
           (meta) => meta.contestant.id === loser.id,
         );
         if (!loserMeta) return;
 
+        // Release a marble from any moving glue platform without changing its
+        // current velocity, direction, spin, or other Matter.js body state.
+        gluedMarblesRef.current.delete(loserMeta.body.id);
         Body.setStatic(loserMeta.body, false);
-        Body.setVelocity(loserMeta.body, {
-          x: (index - (losers.length - 1) / 2) * 0.7,
-          y: 3 + index * 0.16,
-        });
-        Body.setAngularVelocity(
-          loserMeta.body,
-          (index % 2 === 0 ? 1 : -1) * (0.07 + index * 0.01),
-        );
       });
 
       const startingPlace = remainingRef.current.length;
