@@ -17,8 +17,45 @@ import styles from "./MarbleRace.module.css";
 export type MarbleContestant = {
   id: string;
   name: string;
-  imageUrl: string;
+  imageUrl?: string;
+  marbleColor?: string;
+  rainbow?: boolean;
 };
+
+const COLOR_BALLS = [
+  { name: "Salmon", hex: "#FA8072" },
+  { name: "Red", hex: "#EF4444" },
+  { name: "Orange", hex: "#F97316" },
+  { name: "Yellow", hex: "#FDE047" },
+  { name: "Gold", hex: "#D4AF37" },
+  { name: "Lime", hex: "#84CC16" },
+  { name: "Green", hex: "#22C55E" },
+  { name: "Dark Green", hex: "#166534" },
+  { name: "Cyan", hex: "#22D3EE" },
+  { name: "Blue", hex: "#3B82F6" },
+  { name: "Navy", hex: "#172554" },
+  { name: "Lavender", hex: "#C4B5FD" },
+  { name: "Purple", hex: "#8B5CF6" },
+  { name: "Pink", hex: "#F472B6" },
+  { name: "Magenta", hex: "#D946EF" },
+  { name: "Tan", hex: "#D2B48C" },
+  { name: "Brown", hex: "#92400E" },
+  { name: "Silver", hex: "#C0C0C0" },
+  { name: "Gray", hex: "#6B7280" },
+  { name: "White", hex: "#FFFFFF" },
+  { name: "Black", hex: "#111111" },
+  { name: "Rainbow", hex: "rainbow" },
+] as const;
+
+function makeColorContestant(name: string, hex: string): MarbleContestant {
+  return {
+    id: `color-ball-${name.toLowerCase().replace(/\s+/g, "-")}`,
+    name,
+    imageUrl: "",
+    marbleColor: hex === "rainbow" ? undefined : hex,
+    rainbow: hex === "rainbow",
+  };
+}
 
 type MarbleRaceProps = {
   contestants: MarbleContestant[];
@@ -1863,6 +1900,7 @@ export default function MarbleRace({
   const roundStartedRef = useRef(false);
   const roundStartTimestampRef = useRef(0);
   const roundResolvingRef = useRef(false);
+  const eliminationCountRef = useRef(1);
   const mountedRef = useRef(true);
   const levelQueueRef = useRef<LevelDefinition[]>([]);
   const lastLevelIdRef = useRef<LevelId | null>(null);
@@ -1886,6 +1924,12 @@ export default function MarbleRace({
   const [started, setStarted] = useState(false);
   const [paused, setPaused] = useState(false);
   const [playbackSpeed, setPlaybackSpeed] = useState<PlaybackSpeed>(1);
+  const [eliminationInput, setEliminationInput] = useState("1");
+  const [lockedEliminationCount, setLockedEliminationCount] = useState(1);
+  const [useColorBalls, setUseColorBalls] = useState(false);
+  const [selectedColorNames, setSelectedColorNames] = useState<Set<string>>(
+    () => new Set(COLOR_BALLS.map((color) => color.name)),
+  );
   const [qualifiedCount, setQualifiedCount] = useState(0);
   const [qualifiedThisRound, setQualifiedThisRound] = useState<
     MarbleContestant[]
@@ -1978,9 +2022,9 @@ export default function MarbleRace({
     Body.setAngularVelocity(meta.body, (Math.random() - 0.5) * 0.2);
   }, []);
 
-  const resolveEliminationRef = useRef<(loser: MarbleContestant) => void>(
-    () => {},
-  );
+  const resolveEliminationRef = useRef<
+    (losers: MarbleContestant[]) => void
+  >(() => {});
 
   const buildRound = useCallback(
     (roundContestants: MarbleContestant[], roundNumber: number) => {
@@ -2066,7 +2110,7 @@ export default function MarbleRace({
             mask: CATEGORY_MARBLE | CATEGORY_STAGE | CATEGORY_SENSOR,
           },
           render: {
-            fillStyle: "#dbeafe",
+            fillStyle: contestant.marbleColor || "#dbeafe",
             strokeStyle: "#111827",
             lineWidth: 3,
           },
@@ -2554,17 +2598,32 @@ export default function MarbleRace({
             );
             Composite.remove(engine.world, marbleBody);
 
+            const eliminateCount = Math.min(
+              eliminationCountRef.current,
+              roundContestants.length - 1,
+            );
+            const qualificationTarget =
+              roundContestants.length - eliminateCount;
+
             if (
-              qualifiedRef.current.size === roundContestants.length - 1 &&
+              qualifiedRef.current.size >= qualificationTarget &&
               !roundResolvingRef.current
             ) {
               roundResolvingRef.current = true;
-              const loser = [...marblesRef.current.values()].find(
-                (item) => !qualifiedRef.current.has(item.contestant.id),
-              );
-              if (loser) {
+              const losers = [...marblesRef.current.values()]
+                .filter(
+                  (item) =>
+                    !qualifiedRef.current.has(item.contestant.id),
+                )
+                .sort(
+                  (first, second) =>
+                    first.body.position.y - second.body.position.y,
+                )
+                .map((item) => item.contestant);
+
+              if (losers.length) {
                 transitionTimerRef.current = setTimeout(() => {
-                  resolveEliminationRef.current(loser.contestant);
+                  resolveEliminationRef.current(losers);
                 }, 650);
               }
             }
@@ -2606,8 +2665,25 @@ export default function MarbleRace({
               MARBLE_RADIUS * 2,
               MARBLE_RADIUS * 2,
             );
+          } else if (meta.contestant.rainbow) {
+            const rainbow = context.createConicGradient(0, x, y);
+            rainbow.addColorStop(0, "#ef4444");
+            rainbow.addColorStop(0.16, "#f97316");
+            rainbow.addColorStop(0.32, "#fde047");
+            rainbow.addColorStop(0.48, "#22c55e");
+            rainbow.addColorStop(0.64, "#22d3ee");
+            rainbow.addColorStop(0.8, "#3b82f6");
+            rainbow.addColorStop(1, "#a855f7");
+            context.fillStyle = rainbow;
+            context.fillRect(
+              x - MARBLE_RADIUS,
+              y - MARBLE_RADIUS,
+              MARBLE_RADIUS * 2,
+              MARBLE_RADIUS * 2,
+            );
           } else {
-            context.fillStyle = "#dbeafe";
+            context.fillStyle =
+              meta.contestant.marbleColor || "#dbeafe";
             context.fillRect(
               x - MARBLE_RADIUS,
               y - MARBLE_RADIUS,
@@ -2671,29 +2747,48 @@ export default function MarbleRace({
   );
 
   const resolveElimination = useCallback(
-    (loser: MarbleContestant) => {
+    (losers: MarbleContestant[]) => {
       const engine = engineRef.current;
-      if (!engine) return;
+      if (!engine || !losers.length) return;
 
+      const loserIds = new Set(losers.map((loser) => loser.id));
+
+      // Remove the entire stage, including the floor, so every losing marble
+      // visibly drops out of the map together.
       for (const body of [
         ...Composite.allBodies(engine.world),
       ] as ObstacleBody[]) {
-        const isLoser = body.label === `marble:${loser.id}`;
-        const isFloor = body.plugin?.kind === "floor";
-        if (!isLoser && !isFloor) Composite.remove(engine.world, body);
+        const isLosingMarble =
+          body.label.startsWith("marble:") &&
+          loserIds.has(body.label.slice("marble:".length));
+        if (!isLosingMarble) Composite.remove(engine.world, body);
       }
 
-      const loserMeta = [...marblesRef.current.values()].find(
-        (meta) => meta.contestant.id === loser.id,
-      );
-      if (loserMeta) {
+      losers.forEach((loser, index) => {
+        const loserMeta = [...marblesRef.current.values()].find(
+          (meta) => meta.contestant.id === loser.id,
+        );
+        if (!loserMeta) return;
+
         Body.setStatic(loserMeta.body, false);
-        Body.setVelocity(loserMeta.body, { x: 0, y: 3 });
-        Body.setAngularVelocity(loserMeta.body, 0.08);
-      }
+        Body.setVelocity(loserMeta.body, {
+          x: (index - (losers.length - 1) / 2) * 0.7,
+          y: 3 + index * 0.16,
+        });
+        Body.setAngularVelocity(
+          loserMeta.body,
+          (index % 2 === 0 ? 1 : -1) * (0.07 + index * 0.01),
+        );
+      });
 
-      const place = remainingRef.current.length;
-      const eliminationMessage = `${loser.name} is eliminated, finishing in ${ordinal(place)} place.`;
+      const startingPlace = remainingRef.current.length;
+      const endingPlace = startingPlace - losers.length + 1;
+      const names = losers.map((loser) => loser.name).join(", ");
+      const eliminationMessage =
+        losers.length === 1
+          ? `${names} is eliminated, finishing in ${ordinal(startingPlace)} place.`
+          : `${names} are eliminated in ${ordinal(endingPlace)}–${ordinal(startingPlace)} place.`;
+
       setAnnouncement(eliminationMessage);
       setEliminationNotice(eliminationMessage);
 
@@ -2701,9 +2796,9 @@ export default function MarbleRace({
         if (!mountedRef.current) return;
 
         const nextRemaining = remainingRef.current.filter(
-          (contestant) => contestant.id !== loser.id,
+          (contestant) => !loserIds.has(contestant.id),
         );
-        const nextEliminated = [loser, ...eliminatedRef.current];
+        const nextEliminated = [...losers, ...eliminatedRef.current];
         remainingRef.current = nextRemaining;
         eliminatedRef.current = nextEliminated;
         setRemaining(nextRemaining);
@@ -2717,6 +2812,10 @@ export default function MarbleRace({
           onSeasonFinished?.(seasonWinner, [seasonWinner, ...nextEliminated]);
           return;
         }
+
+        setEliminationInput("1");
+        setLockedEliminationCount(1);
+        eliminationCountRef.current = 1;
 
         const nextRound = round + 1;
         setRound(nextRound);
@@ -2743,23 +2842,58 @@ export default function MarbleRace({
       return;
     }
 
-    remainingRef.current = contestants;
+    const colorContestants = useColorBalls
+      ? COLOR_BALLS.filter((color) =>
+          selectedColorNames.has(color.name),
+        ).map((color) => makeColorContestant(color.name, color.hex))
+      : [];
+    const seasonContestants = [...contestants, ...colorContestants];
+
+    if (seasonContestants.length < 2) {
+      setAnnouncement("Add or select at least two marbles.");
+      return;
+    }
+
+    remainingRef.current = seasonContestants;
     eliminatedRef.current = [];
+    eliminationCountRef.current = 1;
     levelQueueRef.current = shuffled(enabled);
     lastLevelIdRef.current = null;
-    setRemaining(contestants);
+    setRemaining(seasonContestants);
     setEliminated([]);
+    setEliminationInput("1");
+    setLockedEliminationCount(1);
     setRound(1);
     setWinner(null);
     setQualifiedThisRound([]);
     setAnnouncement(null);
     setEliminationNotice(null);
     setSeasonStarted(true);
-    buildRound(contestants, 1);
-  }, [buildRound, contestants]);
+    buildRound(seasonContestants, 1);
+  }, [
+    buildRound,
+    contestants,
+    selectedColorNames,
+    useColorBalls,
+  ]);
 
   const startRound = useCallback(() => {
     if (!engineRef.current || started || winner || !seasonStarted) return;
+
+    const parsedEliminationCount = Number.parseInt(eliminationInput, 10);
+    const validEliminationCount =
+      Number.isInteger(parsedEliminationCount) &&
+      parsedEliminationCount >= 1 &&
+      parsedEliminationCount < remainingRef.current.length
+        ? parsedEliminationCount
+        : 1;
+
+    if (validEliminationCount !== parsedEliminationCount) {
+      setEliminationInput("1");
+    }
+
+    eliminationCountRef.current = validEliminationCount;
+    setLockedEliminationCount(validEliminationCount);
     roundStartedRef.current = true;
     roundStartTimestampRef.current =
       engineRef.current.timing.timestamp;
@@ -2777,7 +2911,7 @@ export default function MarbleRace({
         y: 1 + Math.random() * 2,
       });
     }
-  }, [seasonStarted, started, winner]);
+  }, [eliminationInput, seasonStarted, started, winner]);
 
   const changePlaybackSpeed = useCallback((speed: PlaybackSpeed) => {
     playbackSpeedRef.current = speed;
@@ -2819,6 +2953,9 @@ export default function MarbleRace({
     setPaused(false);
     playbackSpeedRef.current = 1;
     setPlaybackSpeed(1);
+    eliminationCountRef.current = 1;
+    setEliminationInput("1");
+    setLockedEliminationCount(1);
     setWinner(null);
     setAnnouncement(null);
     setEliminationNotice(null);
@@ -2874,14 +3011,6 @@ export default function MarbleRace({
       else next.add(levelId);
       return next;
     });
-  }
-
-  if (contestants.length < 2) {
-    return (
-      <div className={styles.emptyState}>
-        Add and select at least two contestants to start Marble Race.
-      </div>
-    );
   }
 
   if (winner) {
@@ -2946,15 +3075,28 @@ export default function MarbleRace({
                   "0 0 0 8px rgba(250,204,21,.2), 0 16px 34px rgba(0,0,0,.45)",
               }}
             >
-              <img
-                src={winner.imageUrl}
-                alt={winner.name}
-                style={{
-                  width: "100%",
-                  height: "100%",
-                  objectFit: "cover",
-                }}
-              />
+              {winner.imageUrl ? (
+                <img
+                  src={winner.imageUrl}
+                  alt={winner.name}
+                  style={{
+                    width: "100%",
+                    height: "100%",
+                    objectFit: "cover",
+                  }}
+                />
+              ) : (
+                <div
+                  aria-label={winner.name}
+                  style={{
+                    width: "100%",
+                    height: "100%",
+                    background: winner.rainbow
+                      ? "conic-gradient(#ef4444, #f97316, #fde047, #22c55e, #22d3ee, #3b82f6, #a855f7, #ef4444)"
+                      : winner.marbleColor || "#dbeafe",
+                  }}
+                />
+              )}
             </div>
 
             <div
@@ -3037,15 +3179,28 @@ export default function MarbleRace({
                       background: "#ffffff",
                     }}
                   >
-                    <img
-                      src={contestant.imageUrl}
-                      alt={contestant.name}
-                      style={{
-                        width: "100%",
-                        height: "100%",
-                        objectFit: "cover",
-                      }}
-                    />
+                    {contestant.imageUrl ? (
+                      <img
+                        src={contestant.imageUrl}
+                        alt={contestant.name}
+                        style={{
+                          width: "100%",
+                          height: "100%",
+                          objectFit: "cover",
+                        }}
+                      />
+                    ) : (
+                      <div
+                        aria-label={contestant.name}
+                        style={{
+                          width: "100%",
+                          height: "100%",
+                          background: contestant.rainbow
+                            ? "conic-gradient(#ef4444, #f97316, #fde047, #22c55e, #22d3ee, #3b82f6, #a855f7, #ef4444)"
+                            : contestant.marbleColor || "#dbeafe",
+                        }}
+                      />
+                    )}
                   </div>
 
                   <strong
@@ -3174,11 +3329,200 @@ export default function MarbleRace({
             </div>
           )}
 
+          {seasonStarted && !winner && (
+            <label
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                padding: "5px 9px",
+                border: "2px solid #334155",
+                borderRadius: 12,
+                background: "#0f172a",
+                color: "#ffffff",
+                fontWeight: 1000,
+              }}
+            >
+              Eliminate
+              <input
+                type="number"
+                min={1}
+                max={Math.max(1, remaining.length - 1)}
+                step={1}
+                value={eliminationInput}
+                disabled={started}
+                onChange={(event) => {
+                  const nextValue = event.target.value;
+                  const parsed = Number.parseInt(nextValue, 10);
+                  if (
+                    nextValue === "" ||
+                    !Number.isInteger(parsed) ||
+                    parsed < 1 ||
+                    parsed >= remaining.length
+                  ) {
+                    setEliminationInput("1");
+                    return;
+                  }
+                  setEliminationInput(String(parsed));
+                }}
+                style={{
+                  width: 62,
+                  padding: "8px 9px",
+                  border: "2px solid #64748b",
+                  borderRadius: 8,
+                  background: started ? "#334155" : "#ffffff",
+                  color: started ? "#e2e8f0" : "#111827",
+                  fontSize: 16,
+                  fontWeight: 1000,
+                  textAlign: "center",
+                }}
+                aria-label="Marbles eliminated this round"
+                title="Choose how many marbles will be eliminated this round"
+              />
+            </label>
+          )}
+
           <button style={buttonStyle} onClick={restartSeason}>
             Reset
           </button>
         </div>
       </div>
+
+      {!seasonStarted && (
+        <section
+          style={{
+            maxWidth: 1180,
+            margin: "0 auto 14px",
+            padding: 16,
+            border: "1px solid #334155",
+            borderRadius: 18,
+            background: "#111827",
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 12,
+              flexWrap: "wrap",
+            }}
+          >
+            <div>
+              <h2 style={{ margin: 0 }}>Color Balls</h2>
+              <p style={{ margin: "6px 0 0", color: "#cbd5e1" }}>
+                Add preset solid-color marbles or the Rainbow marble to the cast.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setUseColorBalls((current) => !current)}
+              style={{
+                ...buttonStyle,
+                background: useColorBalls
+                  ? "linear-gradient(180deg, #4ade80 0%, #16a34a 100%)"
+                  : buttonStyle.background,
+                color: useColorBalls ? "#052e16" : "#ffffff",
+              }}
+            >
+              {useColorBalls ? "✓ Color Balls On" : "Add Color Balls"}
+            </button>
+          </div>
+
+          {useColorBalls && (
+            <>
+              <div
+                style={{
+                  display: "flex",
+                  gap: 8,
+                  marginTop: 14,
+                  flexWrap: "wrap",
+                }}
+              >
+                <button
+                  type="button"
+                  style={buttonStyle}
+                  onClick={() =>
+                    setSelectedColorNames(
+                      new Set(COLOR_BALLS.map((color) => color.name)),
+                    )
+                  }
+                >
+                  Select All
+                </button>
+                <button
+                  type="button"
+                  style={buttonStyle}
+                  onClick={() => setSelectedColorNames(new Set())}
+                >
+                  Select None
+                </button>
+              </div>
+
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns:
+                    "repeat(auto-fit, minmax(135px, 1fr))",
+                  gap: 10,
+                  marginTop: 14,
+                }}
+              >
+                {COLOR_BALLS.map((color) => {
+                  const selected = selectedColorNames.has(color.name);
+                  const rainbowBackground =
+                    "conic-gradient(#ef4444, #f97316, #fde047, #22c55e, #22d3ee, #3b82f6, #a855f7, #ef4444)";
+
+                  return (
+                    <button
+                      key={color.name}
+                      type="button"
+                      onClick={() =>
+                        setSelectedColorNames((current) => {
+                          const next = new Set(current);
+                          if (next.has(color.name)) next.delete(color.name);
+                          else next.add(color.name);
+                          return next;
+                        })
+                      }
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 10,
+                        padding: 10,
+                        border: selected
+                          ? "3px solid #22c55e"
+                          : "3px solid #475569",
+                        borderRadius: 12,
+                        background: selected ? "#14532d" : "#1e293b",
+                        color: "#ffffff",
+                        fontWeight: 1000,
+                        cursor: "pointer",
+                        opacity: selected ? 1 : 0.5,
+                      }}
+                    >
+                      <span
+                        style={{
+                          width: 34,
+                          height: 34,
+                          flex: "0 0 34px",
+                          border: "3px solid #111827",
+                          borderRadius: "999px",
+                          background:
+                            color.hex === "rainbow"
+                              ? rainbowBackground
+                              : color.hex,
+                        }}
+                      />
+                      {color.name}
+                    </button>
+                  );
+                })}
+              </div>
+            </>
+          )}
+        </section>
+      )}
 
       {!seasonStarted && (
         <section
@@ -3249,14 +3593,24 @@ export default function MarbleRace({
 
       <div className={styles.statusRow}>
         <strong>
-          Qualified: {qualifiedCount}/{Math.max(remaining.length - 1, 0)}
+          Qualified: {qualifiedCount}/
+          {Math.max(
+            remaining.length -
+              (started
+                ? lockedEliminationCount
+                : Math.min(
+                    Number.parseInt(eliminationInput, 10) || 1,
+                    Math.max(1, remaining.length - 1),
+                  )),
+            0,
+          )}
         </strong>
         <span>
           {!seasonStarted
-            ? "Choose the custom levels for this season."
+            ? "Choose your color balls and custom levels for this season."
             : started
-              ? "The final marble that has not qualified is eliminated."
-              : "Marbles are shuffling inside the holding chamber."}
+              ? `The last ${lockedEliminationCount} marble${lockedEliminationCount === 1 ? "" : "s"} will be eliminated.`
+              : "Set the elimination count, then start the round."}
         </span>
       </div>
 
@@ -3297,7 +3651,7 @@ export default function MarbleRace({
 
         {!seasonStarted && (
           <div className={styles.announcement}>
-            <div>Select your levels, then click Load Season.</div>
+            <div>Select your marbles and levels, then click Load Season.</div>
           </div>
         )}
       </div>
@@ -3361,8 +3715,10 @@ export default function MarbleRace({
           <h2>Placements</h2>
           <div className={styles.placements}>
             {eliminated.map((contestant, index) => {
+              const totalSeasonMarbles =
+                remaining.length + eliminated.length;
               const place =
-                contestants.length - eliminated.length + 1 + index;
+                totalSeasonMarbles - eliminated.length + 1 + index;
 
               return (
                 <div
@@ -3398,15 +3754,28 @@ export default function MarbleRace({
                       background: "#ffffff",
                     }}
                   >
-                    <img
-                      src={contestant.imageUrl}
-                      alt={contestant.name}
-                      style={{
-                        width: "100%",
-                        height: "100%",
-                        objectFit: "cover",
-                      }}
-                    />
+                    {contestant.imageUrl ? (
+                      <img
+                        src={contestant.imageUrl}
+                        alt={contestant.name}
+                        style={{
+                          width: "100%",
+                          height: "100%",
+                          objectFit: "cover",
+                        }}
+                      />
+                    ) : (
+                      <div
+                        aria-label={contestant.name}
+                        style={{
+                          width: "100%",
+                          height: "100%",
+                          background: contestant.rainbow
+                            ? "conic-gradient(#ef4444, #f97316, #fde047, #22c55e, #22d3ee, #3b82f6, #a855f7, #ef4444)"
+                            : contestant.marbleColor || "#dbeafe",
+                        }}
+                      />
+                    )}
                   </div>
 
                   <span
