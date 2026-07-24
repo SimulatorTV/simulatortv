@@ -1700,8 +1700,8 @@ function buildFishBowl() {
       fishBottomY: bottomY,
       fishTopY: topY,
       fishPhaseMs: phaseByIndex[index],
-      fishMoveMs: 1000,
-      fishCycleMs: 3000,
+      fishMoveMs: 250,
+      fishCycleMs: 750,
     };
 
     bodies.push(platform);
