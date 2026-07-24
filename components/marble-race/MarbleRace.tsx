@@ -86,7 +86,8 @@ type LevelId =
   | "goalie"
   | "switchback-sprint"
   | "pinball-pass"
-  | "fish-bowl";
+  | "fish-bowl"
+  | "spikes";
 
 type LevelDefinition = {
   id: LevelId;
@@ -138,6 +139,10 @@ type ObstacleBody = Matter.Body & {
     fishPhaseMs?: number;
     fishMoveMs?: number;
     fishCycleMs?: number;
+    spikeRise?: boolean;
+    spikeBottomY?: number;
+    spikeTopY?: number;
+    spikeCycleMs?: number;
   };
 };
 
@@ -1652,6 +1657,111 @@ function buildWheel() {
 
 
 
+
+function buildSpikes() {
+  const bodies = makeBaseStage();
+
+  const platformColor = {
+    fillStyle: "#94a3b8",
+    strokeStyle: "#334155",
+    lineWidth: 3,
+  };
+  const spikeColor = {
+    fillStyle: "#ef4444",
+    strokeStyle: "#7f1d1d",
+    lineWidth: 3,
+  };
+
+  // Four shallow angled platforms feed marbles toward the center and floor.
+  bodies.push(
+    makeWall(175, 365, 300, 22, {
+      angle: 0.13,
+      render: platformColor,
+    }),
+    makeWall(925, 365, 300, 22, {
+      angle: -0.13,
+      render: platformColor,
+    }),
+    makeWall(315, 545, 300, 22, {
+      angle: 0.08,
+      render: platformColor,
+    }),
+    makeWall(785, 545, 300, 22, {
+      angle: -0.08,
+      render: platformColor,
+    }),
+  );
+
+  // Very small upside-down V directly over the center.
+  bodies.push(
+    makeWall(518, 620, 74, 16, {
+      angle: -0.18,
+      render: platformColor,
+    }),
+    makeWall(582, 620, 74, 16, {
+      angle: 0.18,
+      render: platformColor,
+    }),
+  );
+
+  // The entire bottom is a green qualification floor.
+  bodies.push(makeFullFloorZone("green-finish"));
+
+  const downTipY = FLOOR_Y - 28;
+  const peakTipY = Math.floor(HEIGHT / 3);
+  const spikeHeight = 154;
+  const spikeWidth = 46;
+  const safeGap = MARBLE_RADIUS * 3; // 1.5 marble diameters
+  const pitch = spikeWidth + safeGap;
+  const firstX = 70;
+  const spikeCount = Math.floor((WIDTH - firstX * 2) / pitch) + 1;
+
+  // One connected red base remains below the green floor while down, then
+  // rises with every spike and completely covers the green at full height.
+  const connectedBase = makeRedReset(
+    WIDTH / 2,
+    downTipY + spikeHeight / 2 + 38,
+    WIDTH - 72,
+    76,
+  );
+  connectedBase.plugin = {
+    kind: "red-reset",
+    spikeRise: true,
+    spikeBottomY: connectedBase.position.y,
+    spikeTopY:
+      connectedBase.position.y - (downTipY - peakTipY),
+    spikeCycleMs: 1000,
+  };
+  bodies.push(connectedBase);
+
+  for (let index = 0; index < spikeCount; index += 1) {
+    const x = firstX + index * pitch;
+    const triangleCenterY = downTipY + spikeHeight / 3;
+
+    const spike = Bodies.polygon(x, triangleCenterY, 3, spikeHeight / 1.72, {
+      isStatic: true,
+      isSensor: true,
+      angle: -Math.PI / 2,
+      collisionFilter: {
+        category: CATEGORY_SENSOR,
+        mask: CATEGORY_MARBLE,
+      },
+      render: spikeColor,
+    }) as ObstacleBody;
+
+    spike.plugin = {
+      kind: "red-reset",
+      spikeRise: true,
+      spikeBottomY: triangleCenterY,
+      spikeTopY: triangleCenterY - (downTipY - peakTipY),
+      spikeCycleMs: 1000,
+    };
+    bodies.push(spike);
+  }
+
+  return bodies;
+}
+
 function buildFishBowl() {
   const bodies = makeBaseStage();
 
@@ -1839,6 +1949,13 @@ const LEVELS: LevelDefinition[] = [
   },
 
   {
+    id: "spikes",
+    name: "Spikes",
+    description:
+      "Race across a green floor while connected red spikes fire to the top third of the map every second.",
+    build: buildSpikes,
+  },
+  {
     id:"fish-bowl",
     name:"Fish Bowl",
     description:
@@ -1926,9 +2043,8 @@ export default function MarbleRace({
   const [playbackSpeed, setPlaybackSpeed] = useState<PlaybackSpeed>(1);
   const [eliminationInput, setEliminationInput] = useState("1");
   const [lockedEliminationCount, setLockedEliminationCount] = useState(1);
-  const [useColorBalls, setUseColorBalls] = useState(false);
   const [selectedColorNames, setSelectedColorNames] = useState<Set<string>>(
-    () => new Set(COLOR_BALLS.map((color) => color.name)),
+    () => new Set(),
   );
   const [qualifiedCount, setQualifiedCount] = useState(0);
   const [qualifiedThisRound, setQualifiedThisRound] = useState<
@@ -2187,6 +2303,43 @@ export default function MarbleRace({
               body,
               body.plugin.wheelBaseAngle + rotation,
             );
+          }
+
+          if (
+            body.plugin?.spikeRise &&
+            body.plugin.spikeBottomY !== undefined &&
+            body.plugin.spikeTopY !== undefined &&
+            body.plugin.spikeCycleMs !== undefined
+          ) {
+            const bottomY = body.plugin.spikeBottomY;
+            const topY = body.plugin.spikeTopY;
+
+            if (!roundStartedRef.current) {
+              Body.setPosition(body, {
+                x: body.position.x,
+                y: bottomY,
+              });
+            } else {
+              const elapsed = Math.max(
+                0,
+                timestamp - roundStartTimestampRef.current,
+              );
+              const cycleTime = elapsed % body.plugin.spikeCycleMs;
+              const halfCycle = body.plugin.spikeCycleMs / 2;
+              const progress =
+                cycleTime < halfCycle
+                  ? cycleTime / halfCycle
+                  : 1 - (cycleTime - halfCycle) / halfCycle;
+              const easedProgress =
+                progress < 0.5
+                  ? 2 * progress * progress
+                  : 1 - Math.pow(-2 * progress + 2, 2) / 2;
+
+              Body.setPosition(body, {
+                x: body.position.x,
+                y: bottomY + (topY - bottomY) * easedProgress,
+              });
+            }
           }
 
           if (
@@ -2842,11 +2995,9 @@ export default function MarbleRace({
       return;
     }
 
-    const colorContestants = useColorBalls
-      ? COLOR_BALLS.filter((color) =>
-          selectedColorNames.has(color.name),
-        ).map((color) => makeColorContestant(color.name, color.hex))
-      : [];
+    const colorContestants = COLOR_BALLS.filter((color) =>
+      selectedColorNames.has(color.name),
+    ).map((color) => makeColorContestant(color.name, color.hex));
     const seasonContestants = [...contestants, ...colorContestants];
 
     if (seasonContestants.length < 2) {
@@ -2874,7 +3025,6 @@ export default function MarbleRace({
     buildRound,
     contestants,
     selectedColorNames,
-    useColorBalls,
   ]);
 
   const startRound = useCallback(() => {
@@ -3240,8 +3390,13 @@ export default function MarbleRace({
           <p className={styles.eyebrow}>SimulatorTV</p>
           <h1>Marble Race</h1>
           <p>
-            Round {round} · {remaining.length} marble
-            {remaining.length === 1 ? "" : "s"} remaining
+            {!seasonStarted
+              ? `${contestants.length + selectedColorNames.size} marble${
+                  contestants.length + selectedColorNames.size === 1 ? "" : "s"
+                } selected`
+              : `Round ${round} · ${remaining.length} marble${
+                  remaining.length === 1 ? "" : "s"
+                } remaining`}
           </p>
           {currentLevelName && seasonStarted && (
             <p>Current level: {currentLevelName}</p>
@@ -3399,128 +3554,110 @@ export default function MarbleRace({
             background: "#111827",
           }}
         >
+          <h2 style={{ margin: 0 }}>Add Color Balls</h2>
+          <p style={{ margin: "6px 0 0", color: "#cbd5e1" }}>
+            Select any colors below. You can start with only color balls,
+            only cast members, or combine both.
+          </p>
+
           <div
             style={{
               display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              gap: 12,
+              gap: 8,
+              marginTop: 14,
               flexWrap: "wrap",
             }}
           >
-            <div>
-              <h2 style={{ margin: 0 }}>Color Balls</h2>
-              <p style={{ margin: "6px 0 0", color: "#cbd5e1" }}>
-                Add preset solid-color marbles or the Rainbow marble to the cast.
-              </p>
-            </div>
             <button
               type="button"
-              onClick={() => setUseColorBalls((current) => !current)}
+              style={buttonStyle}
+              onClick={() =>
+                setSelectedColorNames(
+                  new Set(COLOR_BALLS.map((color) => color.name)),
+                )
+              }
+            >
+              Select All
+            </button>
+            <button
+              type="button"
+              style={buttonStyle}
+              onClick={() => setSelectedColorNames(new Set())}
+            >
+              Select None
+            </button>
+            <strong
               style={{
-                ...buttonStyle,
-                background: useColorBalls
-                  ? "linear-gradient(180deg, #4ade80 0%, #16a34a 100%)"
-                  : buttonStyle.background,
-                color: useColorBalls ? "#052e16" : "#ffffff",
+                display: "flex",
+                alignItems: "center",
+                marginLeft: 6,
+                color: "#ffffff",
               }}
             >
-              {useColorBalls ? "✓ Color Balls On" : "Add Color Balls"}
-            </button>
+              {selectedColorNames.size} selected
+            </strong>
           </div>
 
-          {useColorBalls && (
-            <>
-              <div
-                style={{
-                  display: "flex",
-                  gap: 8,
-                  marginTop: 14,
-                  flexWrap: "wrap",
-                }}
-              >
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns:
+                "repeat(auto-fit, minmax(135px, 1fr))",
+              gap: 10,
+              marginTop: 14,
+            }}
+          >
+            {COLOR_BALLS.map((color) => {
+              const selected = selectedColorNames.has(color.name);
+              const rainbowBackground =
+                "conic-gradient(#ef4444, #f97316, #fde047, #22c55e, #22d3ee, #3b82f6, #a855f7, #ef4444)";
+
+              return (
                 <button
+                  key={color.name}
                   type="button"
-                  style={buttonStyle}
                   onClick={() =>
-                    setSelectedColorNames(
-                      new Set(COLOR_BALLS.map((color) => color.name)),
-                    )
+                    setSelectedColorNames((current) => {
+                      const next = new Set(current);
+                      if (next.has(color.name)) next.delete(color.name);
+                      else next.add(color.name);
+                      return next;
+                    })
                   }
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 10,
+                    padding: 10,
+                    border: selected
+                      ? "3px solid #22c55e"
+                      : "3px solid #475569",
+                    borderRadius: 12,
+                    background: selected ? "#14532d" : "#1e293b",
+                    color: "#ffffff",
+                    fontWeight: 1000,
+                    cursor: "pointer",
+                    opacity: selected ? 1 : 0.5,
+                  }}
                 >
-                  Select All
+                  <span
+                    style={{
+                      width: 34,
+                      height: 34,
+                      flex: "0 0 34px",
+                      border: "3px solid #111827",
+                      borderRadius: "999px",
+                      background:
+                        color.hex === "rainbow"
+                          ? rainbowBackground
+                          : color.hex,
+                    }}
+                  />
+                  {color.name}
                 </button>
-                <button
-                  type="button"
-                  style={buttonStyle}
-                  onClick={() => setSelectedColorNames(new Set())}
-                >
-                  Select None
-                </button>
-              </div>
-
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns:
-                    "repeat(auto-fit, minmax(135px, 1fr))",
-                  gap: 10,
-                  marginTop: 14,
-                }}
-              >
-                {COLOR_BALLS.map((color) => {
-                  const selected = selectedColorNames.has(color.name);
-                  const rainbowBackground =
-                    "conic-gradient(#ef4444, #f97316, #fde047, #22c55e, #22d3ee, #3b82f6, #a855f7, #ef4444)";
-
-                  return (
-                    <button
-                      key={color.name}
-                      type="button"
-                      onClick={() =>
-                        setSelectedColorNames((current) => {
-                          const next = new Set(current);
-                          if (next.has(color.name)) next.delete(color.name);
-                          else next.add(color.name);
-                          return next;
-                        })
-                      }
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 10,
-                        padding: 10,
-                        border: selected
-                          ? "3px solid #22c55e"
-                          : "3px solid #475569",
-                        borderRadius: 12,
-                        background: selected ? "#14532d" : "#1e293b",
-                        color: "#ffffff",
-                        fontWeight: 1000,
-                        cursor: "pointer",
-                        opacity: selected ? 1 : 0.5,
-                      }}
-                    >
-                      <span
-                        style={{
-                          width: 34,
-                          height: 34,
-                          flex: "0 0 34px",
-                          border: "3px solid #111827",
-                          borderRadius: "999px",
-                          background:
-                            color.hex === "rainbow"
-                              ? rainbowBackground
-                              : color.hex,
-                        }}
-                      />
-                      {color.name}
-                    </button>
-                  );
-                })}
-              </div>
-            </>
-          )}
+              );
+            })}
+          </div>
         </section>
       )}
 
@@ -3696,15 +3833,28 @@ export default function MarbleRace({
                     boxShadow: "0 4px 10px rgba(0,0,0,.28)",
                   }}
                 >
-                  <img
-                    src={contestant.imageUrl}
-                    alt={contestant.name}
-                    style={{
-                      width: "100%",
-                      height: "100%",
-                      objectFit: "cover",
-                    }}
-                  />
+                  {contestant.imageUrl ? (
+                    <img
+                      src={contestant.imageUrl}
+                      alt={contestant.name}
+                      style={{
+                        width: "100%",
+                        height: "100%",
+                        objectFit: "cover",
+                      }}
+                    />
+                  ) : (
+                    <div
+                      aria-label={contestant.name}
+                      style={{
+                        width: "100%",
+                        height: "100%",
+                        background: contestant.rainbow
+                          ? "conic-gradient(#ef4444, #f97316, #fde047, #22c55e, #22d3ee, #3b82f6, #a855f7, #ef4444)"
+                          : contestant.marbleColor || "#dbeafe",
+                      }}
+                    />
+                  )}
                 </div>
               ))}
             </div>
