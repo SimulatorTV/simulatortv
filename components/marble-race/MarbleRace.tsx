@@ -1639,19 +1639,19 @@ function buildSpikes() {
 
   // Four shallow angled platforms feed marbles toward the center and floor.
   bodies.push(
-    makeWall(175, 365, 300, 22, {
+    makeWall(240, 365, 120, 22, {
       angle: 0.13,
       render: platformColor,
     }),
-    makeWall(925, 365, 300, 22, {
+    makeWall(860, 365, 120, 22, {
       angle: -0.13,
       render: platformColor,
     }),
-    makeWall(315, 545, 300, 22, {
+    makeWall(365, 545, 120, 22, {
       angle: 0.08,
       render: platformColor,
     }),
-    makeWall(785, 545, 300, 22, {
+    makeWall(735, 545, 120, 22, {
       angle: -0.08,
       render: platformColor,
     }),
