@@ -169,6 +169,13 @@ export default function SimulatorsPage() {
   buttonClass="bg-sky-500 hover:bg-sky-400 text-black"
 />
 
+<SimulatorCard
+  title="Dice Master"
+  description="Challenge winner sends 4 into elimination. One is eliminated, the other 3 go to the next round. Last person standing wins."
+  href="/simulators/dice-master"
+  buttonText="Open Dice Master"
+  buttonClass="bg-black-700 hover:bg-black-600 text-white"
+/>
 
 <SimulatorCard
   title="Hot Seat"
