@@ -116,6 +116,23 @@ const createTeams = (enabledColorNames, selectedCast) => {
   }).filter((team) => team.players.length > 0);
 };
 
+const createEmptyCustomTeams = (enabledColorNames, selectedCast) => {
+  const teamCount = Math.ceil(selectedCast.length / 6);
+  const enabledColors = TEAM_COLORS.filter((color) =>
+    enabledColorNames.includes(color.name)
+  );
+  const selectedColors = enabledColors.slice(0, teamCount);
+
+  return Array.from({ length: teamCount }, (_, teamIndex) => ({
+    id: `team-${teamIndex + 1}`,
+    ...selectedColors[teamIndex],
+    players: [],
+    dailyRolls: {},
+    tieRolls: {},
+    cumulativeScore: 0,
+  }));
+};
+
 
 type CastRecord = {
   id: string;
@@ -335,6 +352,10 @@ export default function DiceMasterPage() {
   const [rollingDaily, setRollingDaily] = useState({});
   const [rollingElimination, setRollingElimination] = useState({});
   const [cumulativeMode, setCumulativeMode] = useState(false);
+  const [teamSetupMode, setTeamSetupMode] = useState("random");
+  const [customTeams, setCustomTeams] = useState([]);
+  const [customUnassigned, setCustomUnassigned] = useState([]);
+  const [draggedPlayerId, setDraggedPlayerId] = useState(null);
 
 
   useEffect(() => {
@@ -512,12 +533,83 @@ export default function DiceMasterPage() {
 
     setCastLocked(true);
     setStage("setup");
+    setCustomTeams([]);
+    setCustomUnassigned([]);
   }
 
   const activeTeams = useMemo(
     () => teams.filter((team) => team.players.length > 0),
     [teams]
   );
+
+  const displayedChallengeTeams = useMemo(() => {
+    const current = [...activeTeams];
+    if (!cumulativeMode || stage !== "daily") return current;
+
+    return current.sort(
+      (a, b) => (b.cumulativeScore || 0) - (a.cumulativeScore || 0)
+    );
+  }, [activeTeams, cumulativeMode, stage]);
+
+  const customTeamsReady =
+    teamSetupMode !== "custom" ||
+    (customUnassigned.length === 0 &&
+      customTeams.length > 0 &&
+      customTeams.every((team) => team.players.length > 0));
+
+  function initializeCustomTeams() {
+    setCustomTeams(createEmptyCustomTeams(enabledColors, selectedCast));
+    setCustomUnassigned([...selectedCast]);
+  }
+
+  function moveCustomPlayer(playerId, destinationTeamId) {
+    let movingPlayer = customUnassigned.find((player) => player.id === playerId);
+
+    if (!movingPlayer) {
+      for (const team of customTeams) {
+        const found = team.players.find((player) => player.id === playerId);
+        if (found) {
+          movingPlayer = found;
+          break;
+        }
+      }
+    }
+
+    if (!movingPlayer) return;
+
+    if (destinationTeamId) {
+      const destination = customTeams.find((team) => team.id === destinationTeamId);
+      if (!destination || destination.players.length >= 6) return;
+    }
+
+    setCustomUnassigned((current) =>
+      current.filter((player) => player.id !== playerId)
+    );
+
+    setCustomTeams((current) =>
+      current.map((team) => {
+        const withoutPlayer = team.players.filter(
+          (player) => player.id !== playerId
+        );
+
+        if (team.id === destinationTeamId) {
+          return {
+            ...team,
+            players: [...withoutPlayer, movingPlayer],
+          };
+        }
+
+        return { ...team, players: withoutPlayer };
+      })
+    );
+
+    if (!destinationTeamId) {
+      setCustomUnassigned((current) => {
+        if (current.some((player) => player.id === playerId)) return current;
+        return [...current, movingPlayer];
+      });
+    }
+  }
 
   const eliminationTeam = teams.find((team) => team.id === eliminationTeamId);
   const winner = activeTeams.length === 1 ? activeTeams[0] : null;
@@ -555,16 +647,50 @@ export default function DiceMasterPage() {
   }, [currentEliminationIds, eliminationRolls]);
 
   const toggleColor = (name) => {
-    setEnabledColors((current) =>
-      current.includes(name)
+    setEnabledColors((current) => {
+      const next = current.includes(name)
         ? current.filter((color) => color !== name)
-        : [...current, name]
-    );
+        : [...current, name];
+
+      if (teamSetupMode === "custom") {
+        window.setTimeout(() => {
+          const teamCount = Math.ceil(selectedCast.length / 6);
+          const colors = TEAM_COLORS.filter((color) => next.includes(color.name));
+
+          setCustomTeams((currentTeams) =>
+            Array.from({ length: teamCount }, (_, index) => {
+              const existing = currentTeams[index];
+              return {
+                id: `team-${index + 1}`,
+                ...colors[index],
+                players: existing?.players || [],
+                dailyRolls: {},
+                tieRolls: {},
+                cumulativeScore: 0,
+              };
+            })
+          );
+        }, 0);
+      }
+
+      return next;
+    });
   };
 
   const startGame = () => {
     if (enabledColors.length < requiredTeams) return;
-    setTeams(createTeams(enabledColors, selectedCast));
+    if (teamSetupMode === "custom" && !customTeamsReady) return;
+
+    setTeams(
+      teamSetupMode === "custom"
+        ? customTeams.map((team) => ({
+            ...team,
+            dailyRolls: {},
+            tieRolls: {},
+            cumulativeScore: 0,
+          }))
+        : createTeams(enabledColors, selectedCast)
+    );
     setRound(1);
     setStage("intro");
     setLowestTeamIds([]);
@@ -845,9 +971,19 @@ export default function DiceMasterPage() {
     }
 
     setRound((value) => value + 1);
-    setTeams((current) =>
-      current.map((team) => ({ ...team, dailyRolls: {}, tieRolls: {} }))
-    );
+    setTeams((current) => {
+      const resetTeams = current.map((team) => ({
+        ...team,
+        dailyRolls: {},
+        tieRolls: {},
+      }));
+
+      return cumulativeMode
+        ? [...resetTeams].sort(
+            (a, b) => (b.cumulativeScore || 0) - (a.cumulativeScore || 0)
+          )
+        : resetTeams;
+    });
     setLowestTeamIds([]);
     setEliminationTeamId(null);
     setEliminationRolls({});
@@ -870,6 +1006,8 @@ export default function DiceMasterPage() {
     setStage("setup");
     setRound(1);
     setHistory([]);
+    setCustomTeams([]);
+    setCustomUnassigned([]);
     setCastLocked(false);
   };
 
@@ -1103,6 +1241,73 @@ export default function DiceMasterPage() {
         }
         .dm-mode-label input { width: 20px; height: 20px; margin-top: 2px; }
         .dm-mode-copy small { display: block; margin-top: 5px; color: #c7d2fe; font-weight: 700; line-height: 1.35; }
+        .dm-team-mode-row {
+          display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px;
+          max-width:760px; margin:18px auto;
+        }
+        .dm-team-mode-button {
+          border:3px solid #4b5563; border-radius:14px; padding:16px;
+          background:#111827; color:#fff; text-align:left; cursor:pointer;
+        }
+        .dm-team-mode-button.active {
+          border-color:#facc15; background:#27210b;
+        }
+        .dm-team-mode-button strong { display:block; font-size:17px; }
+        .dm-team-mode-button small {
+          display:block; margin-top:5px; color:#cbd5e1; line-height:1.35;
+        }
+        .dm-custom-builder {
+          margin:20px 0; padding:16px; border:1px solid #4f46e5;
+          border-radius:18px; background:rgba(3,7,18,.55);
+        }
+        .dm-custom-builder-head {
+          display:flex; justify-content:space-between; align-items:center;
+          gap:12px; flex-wrap:wrap; margin-bottom:14px;
+        }
+        .dm-custom-builder-head h3 { margin:0; }
+        .dm-custom-teams-grid {
+          display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px;
+        }
+        .dm-custom-drop-team {
+          min-height:190px; border:3px dashed rgba(255,255,255,.45);
+          border-radius:15px; overflow:hidden; background:var(--team-bg);
+          color:var(--team-text);
+        }
+        .dm-custom-drop-team.drag-over { outline:4px solid #facc15; }
+        .dm-custom-drop-head {
+          display:flex; justify-content:space-between; gap:10px;
+          padding:10px 12px; background:rgba(0,0,0,.2); font-weight:1000;
+        }
+        .dm-custom-player-grid {
+          display:grid; grid-template-columns:repeat(3,minmax(0,1fr));
+          gap:8px; padding:9px;
+        }
+        .dm-drag-player {
+          overflow:hidden; border:2px solid rgba(255,255,255,.75);
+          border-radius:10px; background:#fff; color:#111827;
+          cursor:grab; text-align:center;
+        }
+        .dm-drag-player:active { cursor:grabbing; }
+        .dm-drag-player img,.dm-drag-no-image {
+          display:grid; place-items:center; width:100%; aspect-ratio:1;
+          object-fit:contain; background:#fff;
+        }
+        .dm-drag-player span {
+          display:block; min-height:34px; padding:5px 4px;
+          font-size:11px; font-weight:900;
+        }
+        .dm-unassigned-zone {
+          margin-bottom:14px; min-height:135px; border:3px dashed #6b7280;
+          border-radius:15px; background:#111827;
+        }
+        .dm-unassigned-zone h4 { margin:0; padding:10px 12px; }
+        .dm-unassigned-grid {
+          display:grid; grid-template-columns:repeat(8,minmax(0,1fr));
+          gap:8px; padding:0 10px 10px;
+        }
+        .dm-custom-warning {
+          margin-top:12px; color:#fca5a5; text-align:center; font-weight:1000;
+        }
         .dm-score-breakdown { margin-top: 8px; font-size: 12px; font-weight: 900; text-align: center; opacity: .95; }
         .dm-team-panel {
           border: 3px solid var(--team-border); border-radius: 16px; overflow: hidden;
@@ -1268,6 +1473,8 @@ export default function DiceMasterPage() {
           }
           .dm-modal-grid { grid-template-columns:repeat(3,minmax(0,1fr)); }
           .dm-roster-grid { grid-template-columns:repeat(3,minmax(0,1fr)); }
+          .dm-team-mode-row,.dm-custom-teams-grid { grid-template-columns:1fr; }
+          .dm-unassigned-grid { grid-template-columns:repeat(3,minmax(0,1fr)); }
           .dm-app { padding: 12px; }
           .dm-topbar { align-items: flex-start; }
           .dm-stage-card { padding: 12px; }
@@ -1378,8 +1585,142 @@ export default function DiceMasterPage() {
             <div className="dm-setup">
               <h2 className="dm-stage-title">Choose Active Team Colors</h2>
               <p className="dm-stage-subtitle">
-                The game randomly selects and shuffles the team colors that are enabled.
+                Choose enabled team colors, then use random teams or build the teams yourself.
               </p>
+
+              <div className="dm-team-mode-row">
+                <button
+                  type="button"
+                  className={`dm-team-mode-button ${teamSetupMode === "random" ? "active" : ""}`}
+                  onClick={() => {
+                    setTeamSetupMode("random");
+                    setCustomTeams([]);
+                    setCustomUnassigned([]);
+                  }}
+                >
+                  <strong>Random Teams</strong>
+                  <small>Shuffle all selected contestants into teams of up to six.</small>
+                </button>
+
+                <button
+                  type="button"
+                  className={`dm-team-mode-button ${teamSetupMode === "custom" ? "active" : ""}`}
+                  onClick={() => {
+                    setTeamSetupMode("custom");
+                    window.setTimeout(initializeCustomTeams, 0);
+                  }}
+                >
+                  <strong>Custom Teams</strong>
+                  <small>Drag each contestant into the team you want before starting.</small>
+                </button>
+              </div>
+
+              {teamSetupMode === "custom" && (
+                <div className="dm-custom-builder">
+                  <div className="dm-custom-builder-head">
+                    <div>
+                      <h3>Build Custom Teams</h3>
+                      <small>Drag players between the unassigned area and team boxes.</small>
+                    </div>
+                    <button
+                      type="button"
+                      className="dm-secondary-button"
+                      onClick={initializeCustomTeams}
+                    >
+                      Reset Teams
+                    </button>
+                  </div>
+
+                  <div
+                    className="dm-unassigned-zone"
+                    onDragOver={(event) => event.preventDefault()}
+                    onDrop={(event) => {
+                      event.preventDefault();
+                      const playerId =
+                        event.dataTransfer.getData("text/plain") || draggedPlayerId;
+                      if (playerId) moveCustomPlayer(playerId, null);
+                      setDraggedPlayerId(null);
+                    }}
+                  >
+                    <h4>Unassigned Players ({customUnassigned.length})</h4>
+                    <div className="dm-unassigned-grid">
+                      {customUnassigned.map((player) => (
+                        <div
+                          key={player.id}
+                          className="dm-drag-player"
+                          draggable
+                          onDragStart={(event) => {
+                            event.dataTransfer.setData("text/plain", player.id);
+                            setDraggedPlayerId(player.id);
+                          }}
+                          onDragEnd={() => setDraggedPlayerId(null)}
+                        >
+                          {player.image ? (
+                            <img src={player.image} alt={player.name} />
+                          ) : (
+                            <div className="dm-drag-no-image">No Image</div>
+                          )}
+                          <span>{player.name}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="dm-custom-teams-grid">
+                    {customTeams.map((team) => (
+                      <section
+                        key={team.id}
+                        className="dm-custom-drop-team"
+                        style={{
+                          "--team-bg": team.bg,
+                          "--team-text": team.text,
+                        }}
+                        onDragOver={(event) => event.preventDefault()}
+                        onDrop={(event) => {
+                          event.preventDefault();
+                          const playerId =
+                            event.dataTransfer.getData("text/plain") || draggedPlayerId;
+                          if (playerId) moveCustomPlayer(playerId, team.id);
+                          setDraggedPlayerId(null);
+                        }}
+                      >
+                        <div className="dm-custom-drop-head">
+                          <strong>{team.name} Team</strong>
+                          <span>{team.players.length}/6</span>
+                        </div>
+
+                        <div className="dm-custom-player-grid">
+                          {team.players.map((player) => (
+                            <div
+                              key={player.id}
+                              className="dm-drag-player"
+                              draggable
+                              onDragStart={(event) => {
+                                event.dataTransfer.setData("text/plain", player.id);
+                                setDraggedPlayerId(player.id);
+                              }}
+                              onDragEnd={() => setDraggedPlayerId(null)}
+                            >
+                              {player.image ? (
+                                <img src={player.image} alt={player.name} />
+                              ) : (
+                                <div className="dm-drag-no-image">No Image</div>
+                              )}
+                              <span>{player.name}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </section>
+                    ))}
+                  </div>
+
+                  {!customTeamsReady && (
+                    <div className="dm-custom-warning">
+                      Assign every contestant and make sure every team has at least one player.
+                    </div>
+                  )}
+                </div>
+              )}
 
               <div className="dm-mode-box">
                 <label className="dm-mode-label">
@@ -1459,11 +1800,11 @@ export default function DiceMasterPage() {
               <h2 className="dm-stage-title">Daily Competition</h2>
               <p className="dm-stage-subtitle">
                 {cumulativeMode
-                  ? "Every player rolls. Scores carry over, and the lowest cumulative total enters elimination."
+                  ? "Teams are shown from highest to lowest cumulative score. Every player rolls, and the lowest cumulative total enters elimination."
                   : "Every player rolls. The team with the lowest combined score enters elimination."}
               </p>
               <div className="dm-challenge-list">
-                {activeTeams.map((team) => {
+                {displayedChallengeTeams.map((team) => {
                   const max = dailyDieMax(team.players.length);
                   return (
                     <TeamBanner key={team.id} team={team}>
@@ -1710,9 +2051,14 @@ export default function DiceMasterPage() {
                 <button
                   className="dm-main-button"
                   onClick={startGame}
-                  disabled={enabledColors.length < requiredTeams}
+                  disabled={
+                    enabledColors.length < requiredTeams ||
+                    (teamSetupMode === "custom" && !customTeamsReady)
+                  }
                 >
-                  Shuffle & Create Teams
+                  {teamSetupMode === "custom"
+                    ? "Start with Custom Teams"
+                    : "Shuffle & Create Teams"}
                 </button>
               </>
             )}

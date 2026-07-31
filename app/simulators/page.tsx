@@ -171,7 +171,7 @@ export default function SimulatorsPage() {
 
 <SimulatorCard
   title="Dice Master"
-  description="Challenge winner sends 4 into elimination. One is eliminated, the other 3 go to the next round. Last person standing wins."
+  description="Teams of 60 roll dice to not have lowest score and eliminate a player"
   href="/simulators/dice-master"
   buttonText="Open Dice Master"
   buttonClass="bg-black-700 hover:bg-black-600 text-white"
